@@ -10,6 +10,7 @@ import com.aireader.library.LibraryActions
 import com.aireader.library.PreparationFailure
 import com.aireader.library.LibraryDatabase
 import com.aireader.library.ReadingPositionEntity
+import com.aireader.player.NarrationPlaybackService
 import com.facebook.react.bridge.ActivityEventListener
 import com.facebook.react.bridge.Arguments
 import com.facebook.react.bridge.BaseActivityEventListener
@@ -17,6 +18,7 @@ import com.facebook.react.bridge.Promise
 import com.facebook.react.bridge.ReactApplicationContext
 import com.facebook.react.bridge.ReactContextBaseJavaModule
 import com.facebook.react.bridge.ReactMethod
+import com.facebook.react.bridge.ReadableArray
 import com.facebook.react.bridge.ReadableMap
 import com.facebook.react.bridge.WritableMap
 import com.facebook.react.modules.core.DeviceEventManagerModule
@@ -431,6 +433,25 @@ class BookLibraryModule(
   @ReactMethod
   fun markBookFinished(bookId: String, finished: Boolean, promise: Promise) = mutateBook(bookId, promise) {
     require(database.libraryDao().markProgress(bookId, if (finished) 100 else 0, System.currentTimeMillis()) == 1)
+  }
+
+  @ReactMethod
+  fun updateSentencesBatch(updates: ReadableArray, promise: Promise) {
+    executor.execute {
+      try {
+        val dao = database.libraryDao()
+        for (i in 0 until updates.size()) {
+          val map = updates.getMap(i) ?: continue
+          val id = map.getString("id") ?: continue
+          val normalizedText = map.getString("normalizedText") ?: continue
+          dao.updateSentenceNormalizedText(id, normalizedText)
+        }
+        NarrationPlaybackService.sentenceCacheInvalidated = true
+        promise.resolve(true)
+      } catch (e: Exception) {
+        promise.reject("UPDATE_SENTENCES_FAILED", e.message ?: "Failed to update sentences", e)
+      }
+    }
   }
 
   @ReactMethod

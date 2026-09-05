@@ -53,6 +53,8 @@ import {
 import { VoicePickerModal } from '../components/VoicePickerModal';
 import { ReaderPlayerBar } from '../components/ReaderPlayerBar';
 import { useNarrationPlayer } from '../state/NarrationPlayerProvider';
+import { narrationPlayerService } from '../services/narrationPlayer';
+import { opencodeMimoService } from '../services/opencodeMimoService';
 import { AppButton } from '../components/AppButton';
 import { useAppTheme } from '../theme/ThemeProvider';
 import { radius, spacing } from '../theme/tokens';
@@ -438,6 +440,88 @@ export function ReaderScreen() {
         bookLibraryService
           .savePreviewPosition(bookId, result.chapterId, result.offset)
           .catch(() => undefined);
+
+        // Background AI refinement via OpenCode MiMo v2.5 / on-device ligature normalization
+        const currentSentences = result.blocks
+          .flatMap(b => b.sentences || [])
+          .map(s => ({ index: s.index, text: s.text, id: s.id }));
+
+        if (currentSentences.length > 0) {
+          opencodeMimoService
+            .refinePageSentences(currentSentences)
+            .then(async refined => {
+              if (!active || !refined.length) return;
+              const dbUpdates = refined
+                .map(r => {
+                  const orig = currentSentences.find(s => s.index === r.index);
+                  return { id: orig?.id || '', normalizedText: r.text };
+                })
+                .filter(u => u.id.length > 0);
+
+              if (dbUpdates.length > 0) {
+                await bookLibraryService.updateSentencesBatch(dbUpdates);
+              }
+
+              const stylesMap: Record<string, string> = {};
+              for (const r of refined) {
+                if (r.style && r.style !== 'neutral') {
+                  stylesMap[r.index.toString()] = r.style;
+                }
+              }
+              if (Object.keys(stylesMap).length > 0) {
+                await narrationPlayerService.setSentenceStyles(
+                  stylesMap,
+                  result.chapterId,
+                );
+              }
+            })
+            .catch(() => undefined);
+        }
+
+        // Proactively pre-refine next page if available
+        if (result.nextOffset !== null && result.nextOffset !== undefined) {
+          const nextOffset = result.nextOffset;
+          bookLibraryService
+            .getChapterPage(bookId, currentChapter.id, nextOffset)
+            .then(nextPageResult => {
+              if (!active) return;
+              const nextSentences = nextPageResult.blocks
+                .flatMap(b => b.sentences || [])
+                .map(s => ({ index: s.index, text: s.text, id: s.id }));
+              if (nextSentences.length > 0) {
+                opencodeMimoService
+                  .refinePageSentences(nextSentences)
+                  .then(async nextRefined => {
+                    if (!active || !nextRefined.length) return;
+                    const nextDbUpdates = nextRefined
+                      .map(r => {
+                        const orig = nextSentences.find(s => s.index === r.index);
+                        return { id: orig?.id || '', normalizedText: r.text };
+                      })
+                      .filter(u => u.id.length > 0);
+
+                    if (nextDbUpdates.length > 0) {
+                      await bookLibraryService.updateSentencesBatch(nextDbUpdates);
+                    }
+
+                    const nextStylesMap: Record<string, string> = {};
+                    for (const r of nextRefined) {
+                      if (r.style && r.style !== 'neutral') {
+                        nextStylesMap[r.index.toString()] = r.style;
+                      }
+                    }
+                    if (Object.keys(nextStylesMap).length > 0) {
+                      await narrationPlayerService.setSentenceStyles(
+                        nextStylesMap,
+                        result.chapterId,
+                      );
+                    }
+                  })
+                  .catch(() => undefined);
+              }
+            })
+            .catch(() => undefined);
+        }
       })
       .catch(reason => {
         if (active) {

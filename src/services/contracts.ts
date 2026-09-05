@@ -48,6 +48,9 @@ export interface LibraryRepository {
   removeBook(bookId: string): Promise<void>;
   getReadingPosition(bookId: string): Promise<ReadingPosition | null>;
   saveReadingPosition(position: ReadingPosition): Promise<ReadingPosition>;
+  updateSentencesBatch(
+    updates: Array<{ id: string; normalizedText: string }>,
+  ): Promise<boolean>;
 }
 
 export interface ModelManager {

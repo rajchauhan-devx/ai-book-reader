@@ -24,6 +24,7 @@ describe('narrationPipelineService', () => {
     });
     const updated = await narrationPipelineService.getPreferences();
     expect(updated).toEqual({
+      ...defaultNarrationPreferences,
       voiceId: 'clear',
       expression: 'expressive',
     });

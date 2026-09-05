@@ -1,4 +1,4 @@
-﻿import React from 'react';
+import React from 'react';
 import TestRenderer, { act } from 'react-test-renderer';
 import { VoicePickerModal } from '../src/components/VoicePickerModal';
 import { narrationPipelineService } from '../src/services/narrationPipeline';
@@ -14,12 +14,10 @@ jest.mock('../src/theme/ThemeProvider', () => ({
 }));
 
 const mockTestNaturalVoice = jest.fn();
-const mockTestPhoneVoice = jest.fn();
 
 jest.mock('../src/state/NarrationEngineProvider', () => ({
   useNarrationEngine: () => ({
     testNaturalVoice: mockTestNaturalVoice,
-    testPhoneVoice: mockTestPhoneVoice,
     status: { running: false, state: 'idle' },
   }),
 }));
@@ -39,13 +37,6 @@ describe('VoicePickerModal', () => {
           descriptor: 'Rich, engaging tone',
           engine: 'natural',
           isDefault: true,
-        },
-        {
-          id: 'system',
-          name: 'Offline Phone Voice',
-          descriptor: 'Built-in Android system speech',
-          engine: 'system',
-          isDefault: false,
         },
       ],
       expressions: [

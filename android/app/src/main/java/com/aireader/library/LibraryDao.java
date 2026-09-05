@@ -120,6 +120,9 @@ public interface LibraryDao {
   @Query("DELETE FROM reading_positions WHERE bookId = :bookId")
   void clearReadingPosition(String bookId);
 
+  @Query("UPDATE sentences SET normalizedText = :normalizedText WHERE id = :sentenceId")
+  void updateSentenceNormalizedText(String sentenceId, String normalizedText);
+
   @Query("UPDATE books SET progressPercent = :progress, updatedAt = :now WHERE id = :bookId AND parserVersion IS NOT NULL AND importState != 'deleting'")
   int markProgress(String bookId, int progress, long now);
 }

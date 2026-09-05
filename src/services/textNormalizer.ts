@@ -264,6 +264,19 @@ export function normalizeNarrationText(text: string): string {
   // Normalize numbers, currencies, decimals
   normalized = normalizeNumbersAndCurrencies(normalized);
 
+  // Fix EPUB/OCR ligature splits (e.g., "fil ed" -> "filled", "stal ion" -> "stallion")
+  normalized = normalized.replace(/\bFinal y\b/g, 'Finally');
+  normalized = normalized.replace(/\bfinal y\b/g, 'finally');
+  normalized = normalized.replace(/\bmarshmal ow(s)?\b/gi, 'marshmallow$1');
+  cleanedLigatures: {
+    normalized = normalized.replace(/\bstal ion(s)?\b/gi, 'stallion$1');
+    normalized = normalized.replace(/\bhil\s+([,.\!?;:])/g, 'hill$1');
+    normalized = normalized.replace(/\bhil\b(?!\s*([a-zA-Z]))/g, 'hill');
+    normalized = normalized.replace(/\b(fil|yel|cal|kil|pul|rol|bel|dwi|stil|spe|sme|spi|dri|chi|gri|thr|swel|fulfi) (ed|ing|er|est)\b/gi, '$1l$2');
+    normalized = normalized.replace(/\b([a-zA-Z]{3,}) (ly)\b/gi, '$1$2');
+    normalized = normalized.replace(/\s+([,.\!?;:])/g, '$1');
+  }
+
   // Collapse multiple spaces
   normalized = normalized.replace(/[ \t]+/g, ' ').trim();
 

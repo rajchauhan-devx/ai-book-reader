@@ -193,6 +193,23 @@ object TextNormalizer {
       if (num != null) integerToWords(num) else match.value
     }
 
+    text = fixLigatureSplits(text)
+
     return text.replace(Regex("[ \\t]+"), " ").trim()
+  }
+
+  fun fixLigatureSplits(rawText: String?): String {
+    if (rawText.isNullOrBlank()) return ""
+    var text = rawText
+    text = text.replace(Regex("\\bFinal y\\b"), "Finally")
+    text = text.replace(Regex("\\bfinal y\\b"), "finally")
+    text = text.replace(Regex("\\bmarshmal ow(s)?\\b", RegexOption.IGNORE_CASE)) { "marshmallow${it.groupValues[1]}" }
+    text = text.replace(Regex("\\bstal ion(s)?\\b", RegexOption.IGNORE_CASE)) { "stallion${it.groupValues[1]}" }
+    text = text.replace(Regex("\\bhil\\s+([,.!?;:])")) { "hill${it.groupValues[1]}" }
+    text = text.replace(Regex("\\bhil\\b(?!\\s*([a-zA-Z]))"), "hill")
+    text = text.replace(Regex("\\b(fil|yel|cal|kil|pul|rol|bel|dwi|stil|spe|sme|spi|dri|chi|gri|thr|swel|fulfi) (ed|ing|er|est)\\b", RegexOption.IGNORE_CASE)) { "${it.groupValues[1]}l${it.groupValues[2]}" }
+    text = text.replace(Regex("\\b([a-zA-Z]{3,}) (ly)\\b", RegexOption.IGNORE_CASE)) { "${it.groupValues[1]}${it.groupValues[2]}" }
+    text = text.replace(Regex("\\s+([,.!?;:])")) { it.groupValues[1] }
+    return text
   }
 }

@@ -32,11 +32,13 @@ import {radius, spacing, typography} from '../theme/tokens';
 import {useModelDownload} from '../state/ModelDownloadProvider';
 import {formatDownloadBytes} from '../services/modelDownload';
 import {useNarrationEngine} from '../state/NarrationEngineProvider';
+import {VoicePickerModal} from '../components/VoicePickerModal';
 
 export function ModelSetupScreen() {
   const {colors} = useAppTheme();
   const navigation = useNavigation();
   const [wifiOnly, setWifiOnly] = useState(true);
+  const [showVoicePicker, setShowVoicePicker] = useState(false);
   const {status, startDownload, pauseDownload} = useModelDownload();
   const {
     status: voiceStatus,
@@ -268,6 +270,14 @@ export function ModelSetupScreen() {
       ) : isReady ? (
         <View style={styles.actions}>
           <AppButton
+            label="Configure AI Engine, Voices & API Key"
+            icon={Sparkles}
+            variant="secondary"
+            fullWidth
+            disabled={voiceBusy}
+            onPress={() => setShowVoicePicker(true)}
+          />
+          <AppButton
             label={
               voiceStatus.state === 'playing'
                 ? 'Stop sample'
@@ -302,6 +312,11 @@ export function ModelSetupScreen() {
         fullWidth
         disabled={isBusy || voiceBusy}
         onPress={testPhoneVoice}
+      />
+
+      <VoicePickerModal
+        visible={showVoicePicker}
+        onClose={() => setShowVoicePicker(false)}
       />
     </Screen>
   );

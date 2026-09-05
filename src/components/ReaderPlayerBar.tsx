@@ -8,6 +8,7 @@ import {
   View,
 } from 'react-native';
 import {
+  AlertCircle,
   Check,
   ChevronLeft,
   ChevronRight,
@@ -152,8 +153,10 @@ export function ReaderPlayerBar({
       {/* Top Status / Progress row */}
       <View style={styles.topStatusRow}>
         <View style={styles.sentenceInfo}>
-          <Text style={[styles.sentenceBadge, { color: colors.ink }]}>
-            {isBuffering
+          <Text style={[styles.sentenceBadge, playerState.state === 'error' ? styles.errorText : { color: colors.ink }]}>
+            {playerState.state === 'error'
+              ? 'Narration Error'
+              : isBuffering
               ? (playerState.pagePreparationTotal && playerState.pagePreparationTotal > 0
                   ? `Preparing page (${playerState.pagePreparationReady || 0}/${playerState.pagePreparationTotal})…`
                   : 'Preparing narration…')
@@ -219,6 +222,22 @@ export function ReaderPlayerBar({
           </Pressable>
         </View>
       </View>
+
+      {/* Error notification banner if any engine/API issue occurred */}
+      {playerState.errorMessage ? (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={`Narration Error: ${playerState.errorMessage}. Tap to configure settings.`}
+          onPress={onOpenVoicePicker}
+          style={styles.errorBanner}
+        >
+          <AlertCircle size={14} color="#DC2626" />
+          <Text style={styles.errorBannerText} numberOfLines={2}>
+            {playerState.errorMessage}
+          </Text>
+          <Text style={styles.errorActionText}>Fix Settings →</Text>
+        </Pressable>
+      ) : null}
 
       {/* Main Playback Controls */}
       <View style={styles.controlsRow}>
@@ -597,5 +616,31 @@ const styles = StyleSheet.create({
   },
   regularText: {
     fontWeight: '400',
+  },
+  errorBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FEF2F2',
+    borderColor: '#FCA5A5',
+    borderWidth: 1,
+    borderRadius: radius.md,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 6,
+    marginBottom: spacing.xs,
+    gap: 6,
+  },
+  errorBannerText: {
+    flex: 1,
+    fontSize: 12,
+    fontWeight: '500',
+    color: '#991B1B',
+  },
+  errorActionText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#DC2626',
+  },
+  errorText: {
+    color: '#DC2626',
   },
 });

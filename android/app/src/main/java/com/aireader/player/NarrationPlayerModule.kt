@@ -7,6 +7,7 @@ import com.facebook.react.bridge.Promise
 import com.facebook.react.bridge.ReactApplicationContext
 import com.facebook.react.bridge.ReactContextBaseJavaModule
 import com.facebook.react.bridge.ReactMethod
+import com.facebook.react.bridge.ReadableMap
 import com.facebook.react.bridge.WritableMap
 import com.facebook.react.modules.core.DeviceEventManagerModule
 
@@ -42,6 +43,31 @@ class NarrationPlayerModule(reactContext: ReactApplicationContext) : ReactContex
       promise.resolve(snapshotToMap(NarrationPlaybackService.currentSnapshot))
     } catch (e: Exception) {
       promise.reject("PLAYER_STATE_ERROR", e.message, e)
+    }
+  }
+
+  @ReactMethod
+  fun setEngineConfig(
+    engineMode: String,
+    apiKey: String?,
+    edgeVoice: String?,
+    promise: Promise,
+  ) {
+    try {
+      NarrationPlaybackService.activeEngineMode = engineMode
+      NarrationPlaybackService.activeEdgeVoice = edgeVoice ?: "en-US-JennyNeural"
+
+      if (NarrationPlaybackService.isServiceActive) {
+        val intent = Intent(reactApplicationContext, NarrationPlaybackService::class.java).apply {
+          action = NarrationPlaybackService.ACTION_SET_ENGINE_CONFIG
+          putExtra(NarrationPlaybackService.EXTRA_ENGINE_MODE, engineMode)
+          putExtra(NarrationPlaybackService.EXTRA_EDGE_VOICE, edgeVoice ?: "en-US-JennyNeural")
+        }
+        startService(intent)
+      }
+      promise.resolve(true)
+    } catch (e: Exception) {
+      promise.reject("CONFIG_ERROR", e.message, e)
     }
   }
 
@@ -172,9 +198,34 @@ class NarrationPlayerModule(reactContext: ReactApplicationContext) : ReactContex
     }
   }
 
+  @ReactMethod
+  fun setSentenceStyles(styles: ReadableMap, chapterId: String?, promise: Promise) {
+    try {
+      val iterator = styles.keySetIterator()
+      while (iterator.hasNextKey()) {
+        val key = iterator.nextKey()
+        val style = styles.getString(key)
+        if (style != null) {
+          if (!chapterId.isNullOrBlank()) {
+            NarrationPlaybackService.sentenceEmotionStyles["${chapterId}:${key}"] = style
+          }
+          NarrationPlaybackService.sentenceEmotionStyles[key] = style
+        }
+      }
+      NarrationPlaybackService.sentenceCacheInvalidated = true
+      promise.resolve(true)
+    } catch (e: Exception) {
+      promise.reject("SET_STYLES_ERROR", e.message, e)
+    }
+  }
+
   private fun startService(intent: Intent) {
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-      reactApplicationContext.startForegroundService(intent)
+      if (intent.action == NarrationPlaybackService.ACTION_PLAY) {
+        reactApplicationContext.startForegroundService(intent)
+      } else if (NarrationPlaybackService.isServiceActive) {
+        reactApplicationContext.startService(intent)
+      }
     } else {
       reactApplicationContext.startService(intent)
     }
@@ -206,6 +257,7 @@ class NarrationPlayerModule(reactContext: ReactApplicationContext) : ReactContex
       putBoolean("sleepTimerEndOfChapter", snapshot.sleepTimerEndOfChapter)
       putInt("pagePreparationReady", snapshot.pagePreparationReady)
       putInt("pagePreparationTotal", snapshot.pagePreparationTotal)
+      putString("errorMessage", snapshot.errorMessage)
     }
   }
 }

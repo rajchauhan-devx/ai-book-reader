@@ -1,6 +1,6 @@
 import { NativeEventEmitter, NativeModules } from 'react-native';
 
-export type PlaybackState = 'idle' | 'playing' | 'paused' | 'buffering' | 'ended';
+export type PlaybackState = 'idle' | 'playing' | 'paused' | 'buffering' | 'ended' | 'error';
 
 export type SleepTimerPreset = 'off' | '10m' | '20m' | '30m' | '45m' | '60m' | 'chapter';
 
@@ -20,6 +20,7 @@ export interface PlayerState {
   sleepTimerEndOfChapter: boolean;
   pagePreparationReady?: number;
   pagePreparationTotal?: number;
+  errorMessage?: string | null;
 }
 
 export const initialPlayerState: PlayerState = {
@@ -38,6 +39,7 @@ export const initialPlayerState: PlayerState = {
   sleepTimerEndOfChapter: false,
   pagePreparationReady: 0,
   pagePreparationTotal: 0,
+  errorMessage: null,
 };
 
 const NativePlayer = NativeModules.NarrationPlayer;
@@ -56,6 +58,37 @@ class NarrationPlayerService {
       return this.normalizeState(state);
     } catch {
       return { ...this.fallbackState };
+    }
+  }
+
+  async setEngineConfig(
+    engineMode: string,
+    edgeVoice?: string | null,
+  ): Promise<boolean> {
+    if (!NativePlayer?.setEngineConfig) {
+      return true;
+    }
+    try {
+      return await NativePlayer.setEngineConfig(
+        engineMode,
+        edgeVoice ?? null,
+      );
+    } catch {
+      return false;
+    }
+  }
+
+  async setSentenceStyles(
+    styles: Record<string, string>,
+    chapterId?: string,
+  ): Promise<boolean> {
+    if (!NativePlayer?.setSentenceStyles) {
+      return true;
+    }
+    try {
+      return await NativePlayer.setSentenceStyles(styles, chapterId ?? null);
+    } catch {
+      return false;
     }
   }
 
@@ -230,6 +263,7 @@ class NarrationPlayerService {
       sleepTimerEndOfChapter: Boolean(raw.sleepTimerEndOfChapter),
       pagePreparationReady: Number(raw.pagePreparationReady) || 0,
       pagePreparationTotal: Number(raw.pagePreparationTotal) || 0,
+      errorMessage: raw.errorMessage ? String(raw.errorMessage) : null,
     };
   }
 

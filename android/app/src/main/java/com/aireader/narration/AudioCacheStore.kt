@@ -56,21 +56,29 @@ class AudioCacheStore(private val context: Context) {
     val dir = chapterDir(bookId, voiceId, chapterId)
     if (!dir.exists() || !dir.isDirectory) return null
     val files = dir.listFiles { file ->
-      file.isFile && file.name.startsWith("seg_${sentenceIndex}_") && file.name.endsWith(".wav")
+      file.isFile && file.name.startsWith("seg_${sentenceIndex}_") && (file.name.endsWith(".wav") || file.name.endsWith(".mp3"))
     } ?: return null
     return files.firstOrNull { isValidWav(it) }
   }
 
   fun isValidWav(file: File): Boolean {
-    if (!file.exists() || file.length() < 44) return false
+    if (!file.exists() || file.length() < 32) return false
     try {
       file.inputStream().use { input ->
         val header = ByteArray(12)
         val read = input.read(header)
-        if (read < 12) return false
+        if (read < 4) return false
         val riff = String(header, 0, 4, Charsets.US_ASCII)
-        val wave = String(header, 8, 4, Charsets.US_ASCII)
-        return riff == "RIFF" && wave == "WAVE"
+        if (read >= 12) {
+          val wave = String(header, 8, 4, Charsets.US_ASCII)
+          if (riff == "RIFF" && wave == "WAVE") return true
+        }
+        // Check for MP3: ID3 header or MPEG sync word
+        if (riff.startsWith("ID3")) return true
+        val b0 = header[0].toInt() and 0xFF
+        val b1 = header[1].toInt() and 0xFF
+        if (b0 == 0xFF && (b1 and 0xE0) == 0xE0) return true
+        return file.length() > 200
       }
     } catch (_: Exception) {
       return false
@@ -79,10 +87,22 @@ class AudioCacheStore(private val context: Context) {
 
   fun wavDurationMs(file: File, sampleRate: Int = 24_000): Long {
     if (!isValidWav(file)) return 0L
-    val dataBytes = file.length() - 44
-    if (dataBytes <= 0) return 0L
-    val samples = dataBytes / 2 // 16-bit mono
-    return (samples * 1000L) / sampleRate
+    val len = file.length()
+    try {
+      file.inputStream().use { input ->
+        val header = ByteArray(4)
+        input.read(header)
+        val riff = String(header, 0, 4, Charsets.US_ASCII)
+        if (riff == "RIFF") {
+          val dataBytes = len - 44
+          if (dataBytes <= 0) return 0L
+          val samples = dataBytes / 2
+          return (samples * 1000L) / sampleRate
+        }
+      }
+    } catch (_: Exception) {}
+    // 48kbps MP3 = 6000 bytes per second
+    return (len * 1000L) / 6000L
   }
 
   fun getChapterAudioStatus(
@@ -96,7 +116,7 @@ class AudioCacheStore(private val context: Context) {
       return ChapterAudioStatus(0, totalSentences, 0L, 0L, false)
     }
 
-    val wavs = dir.listFiles { file -> file.isFile && file.name.endsWith(".wav") } ?: emptyArray()
+    val wavs = dir.listFiles { file -> file.isFile && (file.name.endsWith(".wav") || file.name.endsWith(".mp3")) } ?: emptyArray()
     var validCount = 0
     var totalBytes = 0L
     var totalDuration = 0L

@@ -5,11 +5,17 @@ import {
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
+import {
+  type EdgeVoiceId,
+  type NarrationEngineMode,
+  edgeTtsService,
+} from './edgeTtsService';
+
 export type VoiceProfile = {
   id: string;
   name: string;
   descriptor: string;
-  engine: 'natural' | 'system';
+  engine: 'natural' | 'system' | 'edge';
   isDefault: boolean;
 };
 
@@ -49,6 +55,13 @@ export type ChapterPreparationProgress = {
 export type NarrationPreferences = {
   voiceId: string;
   expression: string;
+  engineMode: NarrationEngineMode;
+  edgeVoice: EdgeVoiceId;
+  chatterboxVoice: string;
+  opencodeApiKey?: string;
+  opencodeBaseUrl?: string;
+  opencodeModel?: string;
+  enableAiRefinement?: boolean;
 };
 
 const PREFS_KEY = '@ai-book-reader/narration-preferences';
@@ -82,13 +95,6 @@ export const DEFAULT_VOICES: VoiceProfile[] = [
     engine: 'natural',
     isDefault: false,
   },
-  {
-    id: 'system',
-    name: 'Offline Phone Voice',
-    descriptor: 'Built-in Android system speech; fast and ultra-low battery',
-    engine: 'system',
-    isDefault: false,
-  },
 ];
 
 export const DEFAULT_EXPRESSIONS: ExpressionPreset[] = [
@@ -112,6 +118,13 @@ export const DEFAULT_EXPRESSIONS: ExpressionPreset[] = [
 export const defaultNarrationPreferences: NarrationPreferences = {
   voiceId: 'warm',
   expression: 'natural',
+  engineMode: 'edge-cloud',
+  edgeVoice: 'en-US-JennyNeural',
+  chatterboxVoice: 'warm',
+  opencodeApiKey: '',
+  opencodeBaseUrl: 'https://opencode.ai/zen/v1',
+  opencodeModel: 'mimo-v2.5-free',
+  enableAiRefinement: true,
 };
 
 const nativeEngine = NativeModules.NarrationEngine;
@@ -131,6 +144,34 @@ class NarrationPipelineService {
         voiceId: typeof parsed.voiceId === 'string' ? parsed.voiceId : 'warm',
         expression:
           typeof parsed.expression === 'string' ? parsed.expression : 'natural',
+        engineMode:
+          parsed.engineMode === 'chatterbox-local'
+            ? 'chatterbox-local'
+            : 'edge-cloud',
+        edgeVoice:
+          parsed.edgeVoice && edgeTtsService.isValidVoice(parsed.edgeVoice)
+            ? parsed.edgeVoice
+            : 'en-US-JennyNeural',
+        chatterboxVoice:
+          typeof parsed.chatterboxVoice === 'string'
+            ? parsed.chatterboxVoice
+            : 'warm',
+        opencodeApiKey:
+          typeof parsed.opencodeApiKey === 'string'
+            ? parsed.opencodeApiKey
+            : '',
+        opencodeBaseUrl:
+          typeof parsed.opencodeBaseUrl === 'string'
+            ? parsed.opencodeBaseUrl
+            : 'https://opencode.ai/zen/v1',
+        opencodeModel:
+          typeof parsed.opencodeModel === 'string'
+            ? parsed.opencodeModel
+            : 'mimo-v2.5-free',
+        enableAiRefinement:
+          typeof parsed.enableAiRefinement === 'boolean'
+            ? parsed.enableAiRefinement
+            : true,
       };
     } catch {
       return defaultNarrationPreferences;
@@ -144,6 +185,13 @@ class NarrationPipelineService {
     const updated: NarrationPreferences = {
       voiceId: patch.voiceId ?? current.voiceId,
       expression: patch.expression ?? current.expression,
+      engineMode: patch.engineMode ?? current.engineMode,
+      edgeVoice: patch.edgeVoice ?? current.edgeVoice,
+      chatterboxVoice: patch.chatterboxVoice ?? current.chatterboxVoice,
+      opencodeApiKey: patch.opencodeApiKey !== undefined ? patch.opencodeApiKey : current.opencodeApiKey,
+      opencodeBaseUrl: patch.opencodeBaseUrl !== undefined ? patch.opencodeBaseUrl : current.opencodeBaseUrl,
+      opencodeModel: patch.opencodeModel !== undefined ? patch.opencodeModel : current.opencodeModel,
+      enableAiRefinement: patch.enableAiRefinement !== undefined ? patch.enableAiRefinement : current.enableAiRefinement,
     };
     await AsyncStorage.setItem(PREFS_KEY, JSON.stringify(updated));
     return updated;

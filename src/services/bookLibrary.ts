@@ -71,6 +71,9 @@ type NativeBookLibrary = {
     chapterId: string,
     offset: number,
   ): Promise<unknown>;
+  updateSentencesBatch(
+    updates: Array<{ id: string; normalizedText: string }>,
+  ): Promise<boolean>;
   addListener(eventName: string): void;
   removeListeners(count: number): void;
 };
@@ -342,6 +345,19 @@ export const bookLibraryService = {
         offset,
       ),
     );
+  },
+  async updateSentencesBatch(
+    updates: Array<{ id: string; normalizedText: string }>,
+  ): Promise<boolean> {
+    if (!nativeLibrary?.updateSentencesBatch || updates.length === 0) {
+      return false;
+    }
+    try {
+      await nativeLibrary.updateSentencesBatch(updates);
+      return true;
+    } catch {
+      return false;
+    }
   },
   async chooseBook(): Promise<BookSelection | null> {
     const result = await requireNativeLibrary().chooseBook();

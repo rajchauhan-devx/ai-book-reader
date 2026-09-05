@@ -12,6 +12,7 @@ import {
   type PlayerState,
   type SleepTimerPreset,
 } from '../services/narrationPlayer';
+import { narrationPipelineService } from '../services/narrationPipeline';
 
 interface NarrationPlayerContextValue {
   playerState: PlayerState;
@@ -46,6 +47,14 @@ export function NarrationPlayerProvider({ children }: { children: React.ReactNod
     // Initial fetch
     narrationPlayerService.getPlayerState().then(setPlayerState).catch(() => undefined);
 
+    // Sync engine config from saved preferences
+    narrationPipelineService.getPreferences().then(async prefs => {
+      await narrationPlayerService.setEngineConfig(
+        prefs.engineMode,
+        prefs.edgeVoice,
+      );
+    }).catch(() => undefined);
+
     // Subscribe to native playback events
     const unsubscribe = narrationPlayerService.subscribe(state => {
       setPlayerState(state);
@@ -66,11 +75,23 @@ export function NarrationPlayerProvider({ children }: { children: React.ReactNod
       speed?: number,
       pageSize?: number,
     ) => {
+      let effectiveVoice = voiceId;
+      if (!effectiveVoice) {
+        try {
+          const prefs = await narrationPipelineService.getPreferences();
+          effectiveVoice =
+            prefs.engineMode === 'chatterbox-local'
+              ? prefs.chatterboxVoice || 'warm'
+              : prefs.edgeVoice || 'en-US-JennyNeural';
+        } catch {
+          effectiveVoice = 'warm';
+        }
+      }
       return narrationPlayerService.play(
         bookId,
         chapterId,
         sentenceIndex,
-        voiceId,
+        effectiveVoice,
         expression,
         speed ?? playerState.speed,
         pageSize,

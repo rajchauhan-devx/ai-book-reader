@@ -32,14 +32,17 @@ import com.aireader.SystemTtsEngine
 import com.aireader.WavAudio
 import com.aireader.library.LibraryDatabase
 import com.aireader.narration.AudioCacheStore
+import com.aireader.narration.EdgeTtsEngine
 import com.aireader.narration.TextNormalizer
 import com.aireader.narration.VoiceCatalog
+import android.util.Log
 import java.io.File
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicInteger
 
+
 data class PlaybackSnapshot(
-  val state: String, // "idle", "playing", "paused", "buffering", "ended"
+  val state: String, // "idle", "playing", "paused", "buffering", "ended", "error"
   val bookId: String?,
   val chapterId: String?,
   val bookTitle: String?,
@@ -54,6 +57,7 @@ data class PlaybackSnapshot(
   val sleepTimerEndOfChapter: Boolean,
   val pagePreparationReady: Int = 0,
   val pagePreparationTotal: Int = 0,
+  val errorMessage: String? = null,
 )
 
 class NarrationPlaybackService : Service() {
@@ -74,6 +78,13 @@ class NarrationPlaybackService : Service() {
     const val ACTION_SKIP_TIME = "com.aireader.player.ACTION_SKIP_TIME"
     const val ACTION_SET_SPEED = "com.aireader.player.ACTION_SET_SPEED"
     const val ACTION_SET_SLEEP_TIMER = "com.aireader.player.ACTION_SET_SLEEP_TIMER"
+    const val ACTION_SET_ENGINE_CONFIG = "com.aireader.player.ACTION_SET_ENGINE_CONFIG"
+    const val ACTION_SET_SENTENCE_STYLES = "com.aireader.player.ACTION_SET_SENTENCE_STYLES"
+
+    val sentenceEmotionStyles = java.util.concurrent.ConcurrentHashMap<String, String>()
+
+    @Volatile
+    var sentenceCacheInvalidated: Boolean = false
 
     const val EXTRA_BOOK_ID = "bookId"
     const val EXTRA_CHAPTER_ID = "chapterId"
@@ -85,6 +96,20 @@ class NarrationPlaybackService : Service() {
     const val EXTRA_DELTA_MS = "deltaMs"
     const val EXTRA_MINUTES = "minutes"
     const val EXTRA_END_OF_CHAPTER = "endOfChapter"
+    const val EXTRA_ENGINE_MODE = "engineMode"
+    const val EXTRA_EDGE_VOICE = "edgeVoice"
+
+    @Volatile
+    var activeEngineMode: String = "edge-cloud"
+
+    @Volatile
+    var activeEdgeVoice: String = "en-US-JennyNeural"
+
+    @Volatile
+    var lastErrorMessage: String? = null
+
+    @Volatile
+    var isServiceActive: Boolean = false
 
     @Volatile
     var currentSnapshot: PlaybackSnapshot = PlaybackSnapshot(
@@ -103,6 +128,7 @@ class NarrationPlaybackService : Service() {
       sleepTimerEndOfChapter = false,
       pagePreparationReady = 0,
       pagePreparationTotal = 0,
+      errorMessage = null,
     )
       private set
 
@@ -130,6 +156,7 @@ class NarrationPlaybackService : Service() {
   private var cachedChapterId: String? = null
   private var cachedSentences: List<com.aireader.library.SentenceEntity> = emptyList()
 
+
   // Active track state
   private var currentBookId: String? = null
   private var currentChapterId: String? = null
@@ -146,6 +173,8 @@ class NarrationPlaybackService : Service() {
   private var currentPageEndIndex = -1
   private var pagePreparationReady = 0
   private var pagePreparationTotal = 0
+  private var currentEngineMode = activeEngineMode
+  private var currentEdgeVoice = activeEdgeVoice
 
   // Sleep timer state
   private var sleepTimerEndTimeMs = 0L
@@ -180,6 +209,7 @@ class NarrationPlaybackService : Service() {
 
   override fun onCreate() {
     super.onCreate()
+    isServiceActive = true
     audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
     cacheStore = AudioCacheStore(applicationContext)
     modelStore = ModelPackStore(applicationContext)
@@ -195,7 +225,29 @@ class NarrationPlaybackService : Service() {
     if (intent == null) return START_NOT_STICKY
 
     when (intent.action) {
+      ACTION_SET_ENGINE_CONFIG -> {
+        val oldMode = currentEngineMode
+        val oldEdgeV = currentEdgeVoice
+        intent.getStringExtra(EXTRA_ENGINE_MODE)?.let {
+          currentEngineMode = it
+          activeEngineMode = it
+        }
+        val edgeV = intent.getStringExtra(EXTRA_EDGE_VOICE) ?: intent.getStringExtra("geminiVoice")
+        edgeV?.let {
+          currentEdgeVoice = it
+          activeEdgeVoice = it
+        }
+        if ((oldMode != currentEngineMode || oldEdgeV != currentEdgeVoice) &&
+            currentBookId != null && currentChapterId != null) {
+          prebufferGeneration.incrementAndGet()
+          releasePlayers()
+          if (currentState == "playing" || currentState == "buffering") {
+            loadAndPlaySentence(currentSentenceIndex)
+          }
+        }
+      }
       ACTION_PLAY -> {
+        updateForegroundNotification()
         val bId = intent.getStringExtra(EXTRA_BOOK_ID) ?: return START_NOT_STICKY
         val cId = intent.getStringExtra(EXTRA_CHAPTER_ID) ?: return START_NOT_STICKY
         val sIdx = intent.getIntExtra(EXTRA_SENTENCE_INDEX, 0)
@@ -203,6 +255,12 @@ class NarrationPlaybackService : Service() {
         val expr = intent.getStringExtra(EXTRA_EXPRESSION) ?: currentExpression
         val spd = intent.getFloatExtra(EXTRA_SPEED, currentSpeed)
         val pSize = intent.getIntExtra(EXTRA_PAGE_SIZE, DEFAULT_PAGE_SIZE)
+        currentEngineMode = intent.getStringExtra(EXTRA_ENGINE_MODE) ?: activeEngineMode
+        val playEdgeV = intent.getStringExtra(EXTRA_EDGE_VOICE) ?: intent.getStringExtra("geminiVoice")
+        if (!playEdgeV.isNullOrBlank()) {
+          currentEdgeVoice = playEdgeV
+          activeEdgeVoice = playEdgeV
+        }
         startPlayback(bId, cId, sIdx, vId, expr, spd, pSize)
       }
       ACTION_PAUSE -> pausePlayback()
@@ -227,12 +285,16 @@ class NarrationPlaybackService : Service() {
         val endOfChap = intent.getBooleanExtra(EXTRA_END_OF_CHAPTER, false)
         configureSleepTimer(minutes, endOfChap)
       }
+      ACTION_SET_SENTENCE_STYLES -> {
+        sentenceCacheInvalidated = true
+      }
     }
 
     return START_STICKY
   }
 
   override fun onDestroy() {
+    isServiceActive = false
     prebufferGeneration.incrementAndGet()
     prebufferExecutor.shutdownNow()
     executor.shutdownNow()
@@ -297,6 +359,7 @@ class NarrationPlaybackService : Service() {
   ) {
     prebufferGeneration.incrementAndGet()
     releasePlayers()
+    lastErrorMessage = null
     currentBookId = bookId
     currentChapterId = chapterId
     currentSentenceIndex = sentenceIndex
@@ -337,6 +400,12 @@ class NarrationPlaybackService : Service() {
     }
   }
 
+  private fun effectiveVoiceId(voiceId: String = currentVoiceId): String {
+    val selectedVoice = VoiceCatalog.findVoice(voiceId)
+    val isEdgeMode = currentEngineMode == "edge-cloud" || selectedVoice.engine == "edge"
+    return if (isEdgeMode) "edge-$currentEdgeVoice" else selectedVoice.id
+  }
+
   private fun prepareAndPlayPage(pageStart: Int, pageEnd: Int, playFromIndex: Int) {
     val bId = currentBookId ?: return
     val cId = currentChapterId ?: return
@@ -350,10 +419,12 @@ class NarrationPlaybackService : Service() {
     currentPageEndIndex = pageEnd
     currentSentenceIndex = playFromIndex
 
+    val vId = effectiveVoiceId(currentVoiceId)
+
     // Check which sentences in [playFromIndex, pageEnd) are missing from cache
     val missingIndices = mutableListOf<Int>()
     for (i in playFromIndex until pageEnd) {
-      val cached = cacheStore.findCachedSegment(bId, currentVoiceId, cId, i)
+      val cached = cacheStore.findCachedSegment(bId, vId, cId, i)
       if (cached == null || !cacheStore.isValidWav(cached)) {
         missingIndices.add(i)
       }
@@ -361,10 +432,11 @@ class NarrationPlaybackService : Service() {
 
     if (missingIndices.isEmpty()) {
       // Entire page is already cached! Play index immediately with no buffering
-      val targetFile = cacheStore.findCachedSegment(bId, currentVoiceId, cId, playFromIndex)
+      val targetFile = cacheStore.findCachedSegment(bId, vId, cId, playFromIndex)
       if (targetFile != null && cacheStore.isValidWav(targetFile)) {
         pagePreparationReady = 0
         pagePreparationTotal = 0
+        lastErrorMessage = null
         playSentenceAudio(targetFile, playFromIndex)
         // Background pre-buffer the next page while this page plays
         prebufferPage(pageEnd, currentPageSize)
@@ -382,11 +454,11 @@ class NarrationPlaybackService : Service() {
     updateSnapshot()
     updateForegroundNotification()
 
-    val vId = currentVoiceId
     val expr = currentExpression
 
     prebufferExecutor.execute {
       try {
+
         var anyFailed = false
         for (missingIdx in missingIndices) {
           if (prebufferGeneration.get() != currentGen) {
@@ -402,6 +474,7 @@ class NarrationPlaybackService : Service() {
           )
           if (synth == null || !cacheStore.isValidWav(synth)) {
             anyFailed = true
+            break
           }
           mainHandler.post {
             if (prebufferGeneration.get() == currentGen) {
@@ -414,26 +487,37 @@ class NarrationPlaybackService : Service() {
 
         mainHandler.post {
           if (prebufferGeneration.get() == currentGen && currentBookId == bId && currentChapterId == cId) {
+            if (anyFailed) {
+              currentState = "error"
+              if (lastErrorMessage == null) {
+                lastErrorMessage = "Audio generation failed for page sentences."
+              }
+              updateSnapshot()
+              updateForegroundNotification()
+              return@post
+            }
+
             val firstFile = cacheStore.findCachedSegment(bId, vId, cId, playFromIndex)
             if (firstFile != null && cacheStore.isValidWav(firstFile)) {
+              lastErrorMessage = null
               playSentenceAudio(firstFile, playFromIndex)
               // Page is ready and playing; prebuffer next page in background!
               prebufferPage(pageEnd, currentPageSize)
             } else {
-              if (!anyFailed && playFromIndex + 1 < pageEnd) {
-                prepareAndPlayPage(pageStart, pageEnd, playFromIndex + 1)
-              } else {
-                currentState = "paused"
-                updateSnapshot()
-                updateForegroundNotification()
+              currentState = "error"
+              if (lastErrorMessage == null) {
+                lastErrorMessage = "Unable to load audio file for sentence ${playFromIndex + 1}."
               }
+              updateSnapshot()
+              updateForegroundNotification()
             }
           }
         }
-      } catch (_: Exception) {
+      } catch (e: Exception) {
         mainHandler.post {
           if (prebufferGeneration.get() == currentGen) {
-            currentState = "paused"
+            currentState = "error"
+            lastErrorMessage = e.message ?: "Page preparation encountered an error."
             updateSnapshot()
             updateForegroundNotification()
           }
@@ -509,7 +593,7 @@ class NarrationPlaybackService : Service() {
       return
     }
 
-    val cached = cacheStore.findCachedSegment(bId, currentVoiceId, cId, nextIndex)
+    val cached = cacheStore.findCachedSegment(bId, effectiveVoiceId(currentVoiceId), cId, nextIndex)
     if (cached != null && cacheStore.isValidWav(cached)) {
       try {
         try { nextPlayer?.release() } catch (_: Exception) {}
@@ -599,7 +683,7 @@ class NarrationPlaybackService : Service() {
 
     // Case B: nextIndex is within current page
     if (nextIndex < currentPageEndIndex) {
-      val nextFile = cacheStore.findCachedSegment(bId, currentVoiceId, cId, nextIndex)
+      val nextFile = cacheStore.findCachedSegment(bId, effectiveVoiceId(currentVoiceId), cId, nextIndex)
       if (nextFile != null && cacheStore.isValidWav(nextFile)) {
         playSentenceAudio(nextFile, nextIndex)
         return
@@ -620,7 +704,7 @@ class NarrationPlaybackService : Service() {
     currentPageStartIndex = newPageStart
     currentPageEndIndex = newPageEnd
 
-    val nextFile = cacheStore.findCachedSegment(bId, currentVoiceId, cId, nextIndex)
+    val nextFile = cacheStore.findCachedSegment(bId, effectiveVoiceId(currentVoiceId), cId, nextIndex)
     if (nextFile != null && cacheStore.isValidWav(nextFile)) {
       playSentenceAudio(nextFile, nextIndex)
       prebufferPage(newPageEnd, currentPageSize)
@@ -667,7 +751,7 @@ class NarrationPlaybackService : Service() {
   private fun prebufferPage(startIndex: Int, count: Int = currentPageSize) {
     val bId = currentBookId ?: return
     val cId = currentChapterId ?: return
-    val vId = currentVoiceId
+    val vId = effectiveVoiceId(currentVoiceId)
     val expr = currentExpression
     val total = totalSentencesInChapter
     if (total <= 0) return
@@ -685,7 +769,7 @@ class NarrationPlaybackService : Service() {
           }
           val cached = cacheStore.findCachedSegment(bId, vId, cId, i)
           if (cached == null || !cacheStore.isValidWav(cached)) {
-            synthesizeSentence(
+            val synth = synthesizeSentence(
               bId,
               cId,
               i,
@@ -693,6 +777,9 @@ class NarrationPlaybackService : Service() {
               expr,
               isCancelled = { prebufferGeneration.get() != currentGen },
             )
+            if (synth == null) {
+              break
+            }
           }
         }
       } catch (_: Exception) { }
@@ -700,9 +787,10 @@ class NarrationPlaybackService : Service() {
   }
 
   private fun getChapterSentences(chapterId: String): List<com.aireader.library.SentenceEntity> {
-    if (cachedChapterId == chapterId && cachedSentences.isNotEmpty()) {
+    if (!sentenceCacheInvalidated && cachedChapterId == chapterId && cachedSentences.isNotEmpty()) {
       return cachedSentences
     }
+    sentenceCacheInvalidated = false
     val db = LibraryDatabase.get(applicationContext)
     val list = db.libraryDao().chapterSentences(chapterId)
     cachedChapterId = chapterId
@@ -724,34 +812,65 @@ class NarrationPlaybackService : Service() {
     if (sentenceIndex < 0 || sentenceIndex >= sentences.size) return null
 
     val sentence = sentences[sentenceIndex]
-    val normalized = if (sentence.normalizedText.isNotBlank()) {
-      TextNormalizer.normalize(sentence.normalizedText)
+    val rawText = if (sentence.normalizedText.isNotBlank()) {
+      sentence.normalizedText
     } else {
-      TextNormalizer.normalize(sentence.text)
+      sentence.text
     }
+    val normalized = TextNormalizer.normalize(rawText)
     if (normalized.isBlank()) return null
 
     if (isCancelled()) return null
 
+    val styleKey = "${chapterId}:${sentenceIndex}"
+    val dynamicEmotion = sentenceEmotionStyles[styleKey] ?: sentenceEmotionStyles[sentenceIndex.toString()]
+    val effectiveExpression = dynamicEmotion ?: expression
+
     val selectedVoice = VoiceCatalog.findVoice(voiceId)
-    val selectedExpr = VoiceCatalog.findExpression(expression)
+    val selectedExpr = VoiceCatalog.findExpression(effectiveExpression)
+
+    val isEdgeMode = currentEngineMode == "edge-cloud" || selectedVoice.engine == "edge"
+    val effectiveVoiceId = if (isEdgeMode) "edge-$currentEdgeVoice" else selectedVoice.id
 
     val cacheKey = cacheStore.computeCacheKey(
       normalizedText = normalized,
-      modelPackId = "chatterbox-nano",
-      modelVersion = ModelPackCatalog.PACK_VERSION,
-      voiceId = selectedVoice.id,
-      expression = selectedExpr.id,
+      modelPackId = if (isEdgeMode) "edge-neural" else "chatterbox-nano",
+      modelVersion = if (isEdgeMode) currentEdgeVoice else ModelPackCatalog.PACK_VERSION,
+      voiceId = effectiveVoiceId,
+      expression = effectiveExpression,
     )
-    val targetFile = cacheStore.segmentFile(bookId, selectedVoice.id, chapterId, sentenceIndex, cacheKey)
+    val targetFile = cacheStore.segmentFile(bookId, effectiveVoiceId, chapterId, sentenceIndex, cacheKey)
     if (cacheStore.isValidWav(targetFile)) return targetFile
 
     targetFile.parentFile?.mkdirs()
-    val useNatural = selectedVoice.engine == "natural" && modelStore.isInstalled()
 
     if (isCancelled()) return null
 
-    if (useNatural) {
+    // Mode 1: Microsoft Edge Neural Cloud AI
+    if (isEdgeMode) {
+      val res = EdgeTtsEngine.synthesize(
+        text = normalized,
+        voiceName = currentEdgeVoice,
+        targetFile = targetFile,
+        emotionStyle = effectiveExpression,
+      )
+      if (res.isSuccess && cacheStore.isValidWav(targetFile)) {
+        lastErrorMessage = null
+        return targetFile
+      }
+      val err = res.exceptionOrNull()?.message ?: "Edge TTS synthesis failed"
+      lastErrorMessage = "Microsoft Edge Neural error: $err"
+      Log.e("NarrationPlaybackService", "Edge TTS failed: $lastErrorMessage")
+      return null
+    }
+
+    // Mode 2: Chatterbox Local On-Device AI
+    if (!modelStore.isInstalled()) {
+      lastErrorMessage = "Chatterbox neural model pack is not installed. Download it in Model Setup."
+      return null
+    }
+
+    try {
       val refFile = File(applicationContext.filesDir, selectedVoice.referenceAsset ?: "voice/neutral-reference.wav")
       if (!refFile.exists() || refFile.length() < 44) {
         systemTts.synthesizeReference(refFile)
@@ -767,11 +886,17 @@ class NarrationPlaybackService : Service() {
       )
       if (isCancelled()) return null
       WavAudio.writeMonoPcm16(targetFile, generated.samples)
-    } else {
-      systemTts.synthesizeTextToFile(normalized, targetFile)
+      if (cacheStore.isValidWav(targetFile)) {
+        return targetFile
+      } else {
+        lastErrorMessage = "Chatterbox generation produced invalid audio."
+        return null
+      }
+    } catch (e: Exception) {
+      Log.e("NarrationPlaybackService", "Chatterbox generation failed: ${e.message}", e)
+      lastErrorMessage = "Chatterbox engine error: ${e.message}"
+      return null
     }
-
-    return if (cacheStore.isValidWav(targetFile)) targetFile else null
   }
 
   private fun pausePlayback() {
@@ -931,6 +1056,7 @@ class NarrationPlaybackService : Service() {
       sleepTimerEndOfChapter = sleepTimerEndOfChapter,
       pagePreparationReady = pagePreparationReady,
       pagePreparationTotal = pagePreparationTotal,
+      errorMessage = lastErrorMessage,
     )
     currentSnapshot = snapshot
     stateListener?.invoke(snapshot)
@@ -941,6 +1067,7 @@ class NarrationPlaybackService : Service() {
       "playing" -> PlaybackStateCompat.STATE_PLAYING
       "paused" -> PlaybackStateCompat.STATE_PAUSED
       "buffering" -> PlaybackStateCompat.STATE_BUFFERING
+      "error" -> PlaybackStateCompat.STATE_ERROR
       else -> PlaybackStateCompat.STATE_NONE
     }
 
@@ -1041,6 +1168,7 @@ class NarrationPlaybackService : Service() {
 
     val subtitle = when (currentState) {
       "buffering" -> if (pagePreparationTotal > 0) "Preparing page ($pagePreparationReady/$pagePreparationTotal)…" else "Preparing narration…"
+      "error" -> lastErrorMessage ?: "Narration error"
       else -> "Sentence ${currentSentenceIndex + 1} of $totalSentencesInChapter"
     }
 

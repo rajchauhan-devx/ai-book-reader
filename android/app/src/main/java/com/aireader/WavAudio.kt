@@ -101,6 +101,28 @@ internal object WavAudio {
     }
   }
 
+  fun writeMonoPcm16Bytes(file: File, pcmBytes: ByteArray, sampleRate: Int = 24_000) {
+    file.parentFile?.mkdirs()
+    val dataSize = pcmBytes.size
+    val header = ByteBuffer.allocate(44).order(ByteOrder.LITTLE_ENDIAN)
+    header.put("RIFF".toByteArray(Charsets.US_ASCII))
+    header.putInt(36 + dataSize)
+    header.put("WAVEfmt ".toByteArray(Charsets.US_ASCII))
+    header.putInt(16)
+    header.putShort(1)
+    header.putShort(1)
+    header.putInt(sampleRate)
+    header.putInt(sampleRate * 2)
+    header.putShort(2)
+    header.putShort(16)
+    header.put("data".toByteArray(Charsets.US_ASCII))
+    header.putInt(dataSize)
+    FileOutputStream(file).use { output ->
+      output.write(header.array())
+      output.write(pcmBytes)
+    }
+  }
+
   private fun decodeSample(bytes: ByteArray, offset: Int, format: Int, bits: Int): Float = when {
     format == 3 && bits == 32 -> ByteBuffer.wrap(bytes, offset, 4).order(ByteOrder.LITTLE_ENDIAN).float
     bits == 8 -> ((bytes[offset].toInt() and 0xff) - 128) / 128f
