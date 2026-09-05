@@ -1,0 +1,542 @@
+{
+  "formatVersion": 1,
+  "database": {
+    "version": 4,
+    "identityHash": "a65af0fd2a86e0d859d130de869b8e40",
+    "entities": [
+      {
+        "tableName": "books",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `sourceSha256` TEXT NOT NULL, `sourceFileName` TEXT NOT NULL, `storedFilePath` TEXT NOT NULL, `mimeType` TEXT NOT NULL, `format` TEXT NOT NULL, `sourceSizeBytes` INTEGER NOT NULL, `title` TEXT NOT NULL, `author` TEXT NOT NULL, `genre` TEXT NOT NULL DEFAULT 'Uncategorized', `importState` TEXT NOT NULL, `failureCode` TEXT, `failureMessage` TEXT, `progressPercent` INTEGER NOT NULL, `currentChapterId` TEXT, `createdAt` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL, `lastOpenedAt` INTEGER, `parserVersion` TEXT, `preparationId` TEXT, `preparationProgress` INTEGER NOT NULL DEFAULT 0, `preparationMessage` TEXT, `metadataEdited` INTEGER NOT NULL DEFAULT 0, `coverChoice` INTEGER NOT NULL DEFAULT -1, `coverImagePath` TEXT, `parsingWarnings` TEXT, `previewChapterId` TEXT, `previewBlockOffset` INTEGER NOT NULL DEFAULT 0, PRIMARY KEY(`id`))",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sourceSha256",
+            "columnName": "sourceSha256",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sourceFileName",
+            "columnName": "sourceFileName",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "storedFilePath",
+            "columnName": "storedFilePath",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "mimeType",
+            "columnName": "mimeType",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "format",
+            "columnName": "format",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sourceSizeBytes",
+            "columnName": "sourceSizeBytes",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "title",
+            "columnName": "title",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "author",
+            "columnName": "author",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "genre",
+            "columnName": "genre",
+            "affinity": "TEXT",
+            "notNull": true,
+            "defaultValue": "'Uncategorized'"
+          },
+          {
+            "fieldPath": "importState",
+            "columnName": "importState",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "failureCode",
+            "columnName": "failureCode",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "failureMessage",
+            "columnName": "failureMessage",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "progressPercent",
+            "columnName": "progressPercent",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "currentChapterId",
+            "columnName": "currentChapterId",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "createdAt",
+            "columnName": "createdAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "updatedAt",
+            "columnName": "updatedAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "lastOpenedAt",
+            "columnName": "lastOpenedAt",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "parserVersion",
+            "columnName": "parserVersion",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "preparationId",
+            "columnName": "preparationId",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "preparationProgress",
+            "columnName": "preparationProgress",
+            "affinity": "INTEGER",
+            "notNull": true,
+            "defaultValue": "0"
+          },
+          {
+            "fieldPath": "preparationMessage",
+            "columnName": "preparationMessage",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "metadataEdited",
+            "columnName": "metadataEdited",
+            "affinity": "INTEGER",
+            "notNull": true,
+            "defaultValue": "0"
+          },
+          {
+            "fieldPath": "coverChoice",
+            "columnName": "coverChoice",
+            "affinity": "INTEGER",
+            "notNull": true,
+            "defaultValue": "-1"
+          },
+          {
+            "fieldPath": "coverImagePath",
+            "columnName": "coverImagePath",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "parsingWarnings",
+            "columnName": "parsingWarnings",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "previewChapterId",
+            "columnName": "previewChapterId",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "previewBlockOffset",
+            "columnName": "previewBlockOffset",
+            "affinity": "INTEGER",
+            "notNull": true,
+            "defaultValue": "0"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_books_sourceSha256",
+            "unique": true,
+            "columnNames": [
+              "sourceSha256"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_books_sourceSha256` ON `${TABLE_NAME}` (`sourceSha256`)"
+          },
+          {
+            "name": "index_books_updatedAt",
+            "unique": false,
+            "columnNames": [
+              "updatedAt"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_books_updatedAt` ON `${TABLE_NAME}` (`updatedAt`)"
+          },
+          {
+            "name": "index_books_importState",
+            "unique": false,
+            "columnNames": [
+              "importState"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_books_importState` ON `${TABLE_NAME}` (`importState`)"
+          },
+          {
+            "name": "index_books_genre",
+            "unique": false,
+            "columnNames": [
+              "genre"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_books_genre` ON `${TABLE_NAME}` (`genre`)"
+          }
+        ]
+      },
+      {
+        "tableName": "chapters",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `bookId` TEXT NOT NULL, `ordinal` INTEGER NOT NULL, `title` TEXT NOT NULL, `sourceAnchor` TEXT, PRIMARY KEY(`id`), FOREIGN KEY(`bookId`) REFERENCES `books`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "bookId",
+            "columnName": "bookId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "ordinal",
+            "columnName": "ordinal",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "title",
+            "columnName": "title",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sourceAnchor",
+            "columnName": "sourceAnchor",
+            "affinity": "TEXT"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_chapters_bookId",
+            "unique": false,
+            "columnNames": [
+              "bookId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_chapters_bookId` ON `${TABLE_NAME}` (`bookId`)"
+          },
+          {
+            "name": "index_chapters_bookId_ordinal",
+            "unique": true,
+            "columnNames": [
+              "bookId",
+              "ordinal"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_chapters_bookId_ordinal` ON `${TABLE_NAME}` (`bookId`, `ordinal`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "books",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "bookId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "content_blocks",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `chapterId` TEXT NOT NULL, `ordinal` INTEGER NOT NULL, `kind` TEXT NOT NULL, `text` TEXT NOT NULL, `sourceAnchor` TEXT, `checksum` TEXT NOT NULL, PRIMARY KEY(`id`), FOREIGN KEY(`chapterId`) REFERENCES `chapters`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "chapterId",
+            "columnName": "chapterId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "ordinal",
+            "columnName": "ordinal",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "kind",
+            "columnName": "kind",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "text",
+            "columnName": "text",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sourceAnchor",
+            "columnName": "sourceAnchor",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "checksum",
+            "columnName": "checksum",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_content_blocks_chapterId",
+            "unique": false,
+            "columnNames": [
+              "chapterId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_content_blocks_chapterId` ON `${TABLE_NAME}` (`chapterId`)"
+          },
+          {
+            "name": "index_content_blocks_chapterId_ordinal",
+            "unique": true,
+            "columnNames": [
+              "chapterId",
+              "ordinal"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_content_blocks_chapterId_ordinal` ON `${TABLE_NAME}` (`chapterId`, `ordinal`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "chapters",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "chapterId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "sentences",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `blockId` TEXT NOT NULL, `ordinal` INTEGER NOT NULL, `text` TEXT NOT NULL, `normalizedChecksum` TEXT NOT NULL, `normalizedText` TEXT NOT NULL DEFAULT '', `sourceAnchor` TEXT, PRIMARY KEY(`id`), FOREIGN KEY(`blockId`) REFERENCES `content_blocks`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "blockId",
+            "columnName": "blockId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "ordinal",
+            "columnName": "ordinal",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "text",
+            "columnName": "text",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "normalizedChecksum",
+            "columnName": "normalizedChecksum",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "normalizedText",
+            "columnName": "normalizedText",
+            "affinity": "TEXT",
+            "notNull": true,
+            "defaultValue": "''"
+          },
+          {
+            "fieldPath": "sourceAnchor",
+            "columnName": "sourceAnchor",
+            "affinity": "TEXT"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_sentences_blockId",
+            "unique": false,
+            "columnNames": [
+              "blockId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_sentences_blockId` ON `${TABLE_NAME}` (`blockId`)"
+          },
+          {
+            "name": "index_sentences_blockId_ordinal",
+            "unique": true,
+            "columnNames": [
+              "blockId",
+              "ordinal"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_sentences_blockId_ordinal` ON `${TABLE_NAME}` (`blockId`, `ordinal`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "content_blocks",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "blockId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "reading_positions",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`bookId` TEXT NOT NULL, `chapterId` TEXT NOT NULL, `sentenceIndex` INTEGER NOT NULL, `audioOffsetMs` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL, PRIMARY KEY(`bookId`), FOREIGN KEY(`bookId`) REFERENCES `books`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "bookId",
+            "columnName": "bookId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "chapterId",
+            "columnName": "chapterId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sentenceIndex",
+            "columnName": "sentenceIndex",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "audioOffsetMs",
+            "columnName": "audioOffsetMs",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "updatedAt",
+            "columnName": "updatedAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "bookId"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_reading_positions_chapterId",
+            "unique": false,
+            "columnNames": [
+              "chapterId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_reading_positions_chapterId` ON `${TABLE_NAME}` (`chapterId`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "books",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "bookId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      }
+    ],
+    "setupQueries": [
+      "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, 'a65af0fd2a86e0d859d130de869b8e40')"
+    ]
+  }
+}

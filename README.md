@@ -1,4 +1,48 @@
-This is a new [**React Native**](https://reactnative.dev) project, bootstrapped using [`@react-native-community/cli`](https://github.com/react-native-community/cli).
+# AI Book Reader Mobile
+
+A private, local-first Android book reader built with React Native and TypeScript. Phase 1 provides the navigable product shell and design system. Phase 2 adds the direct, resumable natural-voice download and real on-device Chatterbox Nano inference.
+
+Phase 3 now implements EPUB/PDF/TXT preparation, automatic durable jobs, real chapter/page preview, saved page locations, metadata/cover editing, sorting/filtering and multi-select removal. Books stay in private Room/file storage. Design samples are opt-in. Full Reader tools/notes and imported-book narration remain later phases; prepared text is not prepared audio.
+
+## Current status
+
+- Phase 1 application/UI foundation: code complete.
+- Phase 2 model manager and native voice self-test: code complete.
+- Phase 3A private book storage, Room schema, document picker, progress, duplicate detection, and removal: implemented.
+- Phase 3B/3C: three parsers, Room schema v3 with non-destructive v1/v2 migrations, automatic WorkManager jobs, progress/cancel/retry/reprocess, metadata/cover controls, real Continue reading, virtualized library filters/sorts and batch removal implemented. Final acceptance evidence and remaining release gates: `../docs/phase-3-implementation.md`.
+- To try it: Import book → Choose file → Open imported book → Preview prepared text. Preparation starts automatically. Chapter and 24-block page positions are saved; exact-sentence Reader resume comes in Phase 4.
+- Limits: source copy 250 MiB; UTF-8 TXT preparation 16 MiB; text PDF preparation 64 MiB / 1,000 pages; shared extracted text 4 million UTF-16 units. EPUB expansion and markup are bounded. Scanned PDFs need OCR (not included); protected files are rejected; PDF reading order carries a layout warning.
+- Direct in-app download: resumable, SHA-256 verified, atomically installed, and kept in app-private storage.
+- Natural voice: four-stage Chatterbox Nano ONNX pipeline with local WAV generation and playback.
+- Safety fallback: offline Android phone voice.
+- Voice controls: Battery, Balanced, and Quality modes; cancellation; cleanup; model removal.
+- Persistent first launch and theme preferences: complete.
+- Typed boundaries for library, model, import, and narration services: complete.
+- TypeScript, lint, Android compilation and debug APK build: passing. Current tests: 38 JavaScript + 37 native unit + 14 on-device integration = 89 passing. Updated APK installed; the core EPUB/PDF/TXT/library walkthrough passed on the Motorola phone on September 4, 2026.
+- Automated Android APK build: configured in `.github/workflows/mobile-ci.yml`.
+- Phase 2 device verification: passed on the connected ARM64 Motorola test phone.
+- Phase 3 device checks: picker import, matching private-copy hash, EPUB/PDF/TXT preparation and preview, scan-like PDF failure, restart persistence, metadata/reprocess, cancellation/retry, search/filter/sort, completion and five-book batch removal passed on the Motorola phone. Cleanup left no private books and preserved the 547 MB voice pack. Broader release hardening remains tracked in `../docs/phase-3-implementation.md`.
+- Next release gate: 6 GB/8 GB/flagship device matrix, naturalness review, and a 30-minute generation soak.
+
+## Requirements
+
+Native changes require rebuilding/reinstalling the Android app; Metro reload alone cannot add the book-library module. No app-data reset or model re-download is needed. Run `./gradlew assembleDebug testDebugUnitTest` from the Android directory for the APK and native checks.
+
+Database integration tests use isolated test databases; PDF tests use synthetic private fixtures. Build the test APK with `./gradlew assembleDebugAndroidTest`; run on a dedicated device with `./gradlew connectedDebugAndroidTest`. Retain exported schema 1.json and 2.json for migration tests. Generate original manual-test fixtures with `node test-fixtures/generate-phase3.cjs`.
+
+- Node.js 22.13 or newer (see `.nvmrc`).
+- Java 17.
+- Android Studio and an Android SDK/device.
+
+## Quality checks
+
+```sh
+npm run typecheck
+npm run lint
+npm test -- --runInBand
+```
+
+This project was bootstrapped using the official [`@react-native-community/cli`](https://github.com/react-native-community/cli).
 
 # Getting Started
 

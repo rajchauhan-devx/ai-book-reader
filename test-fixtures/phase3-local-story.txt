@@ -1,0 +1,13 @@
+The Lantern Library
+
+Chapter One: A Quiet Beginning
+
+Mira opened the little library just before sunrise. A warm light fell across the wooden shelves, and the first visitor brought a book wrapped in blue paper.
+
+"Every story needs a place to begin," she said. Outside, the rain slowed to a whisper.
+
+Chapter Two: Words Travel
+
+Some pages held familiar words. Others welcomed new voices: नमस्ते, café, and a small bright star.
+
+This original test story checks private importing, UTF-8 text, duplicate detection, restart persistence, and removal. It is not a complete audiobook.

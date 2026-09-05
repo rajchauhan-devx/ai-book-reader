@@ -83,7 +83,13 @@ android {
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 1
-        versionName "1.0"
+        versionName "1.0.0-beta"
+        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+        javaCompileOptions {
+            annotationProcessorOptions {
+                arguments += ["room.schemaLocation": "$projectDir/schemas"]
+            }
+        }
     }
     signingConfigs {
         debug {
@@ -105,11 +111,24 @@ android {
             proguardFiles getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro"
         }
     }
+    sourceSets {
+        androidTest.assets.srcDirs += files("$projectDir/schemas")
+    }
 }
 
 dependencies {
     // The version of react-native is set by the React Native Gradle Plugin
     implementation("com.facebook.react:react-android")
+    implementation("androidx.work:work-runtime:2.11.2")
+    implementation("androidx.room:room-runtime:2.8.4")
+    implementation("org.jsoup:jsoup:1.23.2")
+    implementation("com.tom-roush:pdfbox-android:2.0.27.0")
+    annotationProcessor("androidx.room:room-compiler:2.8.4")
+    testImplementation("junit:junit:4.13.2")
+    androidTestImplementation("androidx.test:runner:1.6.2")
+    androidTestImplementation("androidx.test.ext:junit:1.2.1")
+    implementation("com.microsoft.onnxruntime:onnxruntime-android:1.29.0")
+    implementation("androidx.media:media:1.7.0")
 
     if (hermesEnabled.toBoolean()) {
         implementation("com.facebook.react:hermes-android")
