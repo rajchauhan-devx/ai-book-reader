@@ -58,6 +58,9 @@ data class PlaybackSnapshot(
   val pagePreparationReady: Int = 0,
   val pagePreparationTotal: Int = 0,
   val errorMessage: String? = null,
+  val engineMode: String = "edge-cloud",
+  val voiceId: String = "warm",
+  val isModelLoaded: Boolean = false,
 )
 
 class NarrationPlaybackService : Service() {
@@ -112,6 +115,19 @@ class NarrationPlaybackService : Service() {
     var isServiceActive: Boolean = false
 
     @Volatile
+    internal var onnxEngineInstance: ChatterboxOnnxEngine? = null
+
+    val isModelLoaded: Boolean
+      get() = onnxEngineInstance != null
+
+    fun unloadOnnxEngine() {
+      try {
+        onnxEngineInstance?.close()
+      } catch (_: Exception) {}
+      onnxEngineInstance = null
+    }
+
+    @Volatile
     var currentSnapshot: PlaybackSnapshot = PlaybackSnapshot(
       state = "idle",
       bookId = null,
@@ -129,6 +145,9 @@ class NarrationPlaybackService : Service() {
       pagePreparationReady = 0,
       pagePreparationTotal = 0,
       errorMessage = null,
+      engineMode = "edge-cloud",
+      voiceId = "warm",
+      isModelLoaded = false,
     )
       private set
 
@@ -237,6 +256,14 @@ class NarrationPlaybackService : Service() {
           currentEdgeVoice = it
           activeEdgeVoice = it
         }
+        if (oldMode == "chatterbox-local" && currentEngineMode != "chatterbox-local") {
+          try {
+            onnxEngine?.close()
+          } catch (_: Exception) {}
+          onnxEngine = null
+          onnxEngineInstance = null
+          updateSnapshot()
+        }
         if ((oldMode != currentEngineMode || oldEdgeV != currentEdgeVoice) &&
             currentBookId != null && currentChapterId != null) {
           prebufferGeneration.incrementAndGet()
@@ -304,8 +331,11 @@ class NarrationPlaybackService : Service() {
     abandonAudioFocus()
     releasePlayers()
     mediaSession.release()
-    onnxEngine?.close()
+    try {
+      onnxEngine?.close()
+    } catch (_: Exception) {}
     onnxEngine = null
+    onnxEngineInstance = null
     currentState = "idle"
     updateSnapshot()
     super.onDestroy()
@@ -430,23 +460,44 @@ class NarrationPlaybackService : Service() {
       }
     }
 
-    if (missingIndices.isEmpty()) {
-      // Entire page is already cached! Play index immediately with no buffering
-      val targetFile = cacheStore.findCachedSegment(bId, vId, cId, playFromIndex)
-      if (targetFile != null && cacheStore.isValidWav(targetFile)) {
-        pagePreparationReady = 0
-        pagePreparationTotal = 0
-        lastErrorMessage = null
-        playSentenceAudio(targetFile, playFromIndex)
-        // Background pre-buffer the next page while this page plays
-        prebufferPage(pageEnd, currentPageSize)
-        return
+    // Fast path: If the requested sentence is ALREADY cached, play it immediately with 0 delay!
+    val firstFile = cacheStore.findCachedSegment(bId, vId, cId, playFromIndex)
+    if (firstFile != null && cacheStore.isValidWav(firstFile)) {
+      pagePreparationReady = 0
+      pagePreparationTotal = 0
+      lastErrorMessage = null
+      playSentenceAudio(firstFile, playFromIndex)
+
+      // Pre-buffer any remaining uncached sentences on this page in the background
+      if (missingIndices.isNotEmpty()) {
+        val currentGen = prebufferGeneration.incrementAndGet()
+        val expr = currentExpression
+        prebufferExecutor.execute {
+          try {
+            for (missingIdx in missingIndices) {
+              if (prebufferGeneration.get() != currentGen) return@execute
+              val synth = synthesizeSentence(
+                bId,
+                cId,
+                missingIdx,
+                vId,
+                expr,
+                isCancelled = { prebufferGeneration.get() != currentGen },
+              )
+              if (synth == null || !cacheStore.isValidWav(synth)) break
+            }
+            if (prebufferGeneration.get() == currentGen) {
+              prebufferPage(pageEnd, currentPageSize)
+            }
+          } catch (_: Exception) {}
+        }
       } else {
-        missingIndices.add(playFromIndex)
+        prebufferPage(pageEnd, currentPageSize)
       }
+      return
     }
 
-    // Prepare missing sentences on this page upfront before continuous playback begins
+    // Slow path: playFromIndex needs synthesis. Synthesize it FIRST and play as soon as it's ready!
     val currentGen = prebufferGeneration.incrementAndGet()
     currentState = "buffering"
     pagePreparationTotal = (pageEnd - playFromIndex).coerceAtLeast(missingIndices.size)
@@ -458,9 +509,17 @@ class NarrationPlaybackService : Service() {
 
     prebufferExecutor.execute {
       try {
+        // Ensure playFromIndex is synthesized first
+        val orderedIndices = if (missingIndices.contains(playFromIndex)) {
+          listOf(playFromIndex) + missingIndices.filter { it != playFromIndex }
+        } else {
+          missingIndices
+        }
 
-        var anyFailed = false
-        for (missingIdx in missingIndices) {
+        var firstPlayed = false
+        var firstFailed = false
+
+        for (missingIdx in orderedIndices) {
           if (prebufferGeneration.get() != currentGen) {
             return@execute
           }
@@ -473,9 +532,30 @@ class NarrationPlaybackService : Service() {
             isCancelled = { prebufferGeneration.get() != currentGen },
           )
           if (synth == null || !cacheStore.isValidWav(synth)) {
-            anyFailed = true
-            break
+            if (missingIdx == playFromIndex) {
+              firstFailed = true
+              break
+            }
+            // For subsequent sentences, don't abort immediately if first already playing
+            continue
           }
+
+          if (missingIdx == playFromIndex && !firstPlayed) {
+            firstPlayed = true
+            val readyFile = cacheStore.findCachedSegment(bId, vId, cId, playFromIndex)
+            if (readyFile != null && cacheStore.isValidWav(readyFile)) {
+              mainHandler.post {
+                if (prebufferGeneration.get() == currentGen && currentBookId == bId && currentChapterId == cId) {
+                  lastErrorMessage = null
+                  playSentenceAudio(readyFile, playFromIndex)
+                }
+              }
+            } else {
+              firstFailed = true
+              break
+            }
+          }
+
           mainHandler.post {
             if (prebufferGeneration.get() == currentGen) {
               pagePreparationReady = (pagePreparationReady + 1).coerceAtMost(pagePreparationTotal)
@@ -485,33 +565,20 @@ class NarrationPlaybackService : Service() {
           }
         }
 
-        mainHandler.post {
-          if (prebufferGeneration.get() == currentGen && currentBookId == bId && currentChapterId == cId) {
-            if (anyFailed) {
+        if (firstFailed) {
+          mainHandler.post {
+            if (prebufferGeneration.get() == currentGen && currentBookId == bId && currentChapterId == cId) {
               currentState = "error"
               if (lastErrorMessage == null) {
-                lastErrorMessage = "Audio generation failed for page sentences."
-              }
-              updateSnapshot()
-              updateForegroundNotification()
-              return@post
-            }
-
-            val firstFile = cacheStore.findCachedSegment(bId, vId, cId, playFromIndex)
-            if (firstFile != null && cacheStore.isValidWav(firstFile)) {
-              lastErrorMessage = null
-              playSentenceAudio(firstFile, playFromIndex)
-              // Page is ready and playing; prebuffer next page in background!
-              prebufferPage(pageEnd, currentPageSize)
-            } else {
-              currentState = "error"
-              if (lastErrorMessage == null) {
-                lastErrorMessage = "Unable to load audio file for sentence ${playFromIndex + 1}."
+                lastErrorMessage = "Audio generation failed for sentence ${playFromIndex + 1}."
               }
               updateSnapshot()
               updateForegroundNotification()
             }
           }
+        } else if (prebufferGeneration.get() == currentGen) {
+          // Page prebuffering complete, start next page prebuffer
+          prebufferPage(pageEnd, currentPageSize)
         }
       } catch (e: Exception) {
         mainHandler.post {
@@ -871,12 +938,26 @@ class NarrationPlaybackService : Service() {
     }
 
     try {
-      val refFile = File(applicationContext.filesDir, selectedVoice.referenceAsset ?: "voice/neutral-reference.wav")
+      var refFile = File(applicationContext.filesDir, selectedVoice.referenceAsset ?: "voice/neutral-reference.wav")
       if (!refFile.exists() || refFile.length() < 44) {
-        systemTts.synthesizeReference(refFile)
+        val fallbackRef = File(applicationContext.filesDir, "voice/neutral-reference.wav")
+        if (fallbackRef.exists() && fallbackRef.length() >= 44) {
+          refFile = fallbackRef
+        } else {
+          try {
+            systemTts.synthesizeReference(refFile)
+          } catch (_: Exception) {}
+          if (!refFile.exists() || refFile.length() < 44) {
+            if (fallbackRef.exists()) refFile = fallbackRef
+          }
+        }
       }
       val reference = WavAudio.readMono(refFile)
-      val naturalEngine = onnxEngine ?: ChatterboxOnnxEngine(modelStore).also { onnxEngine = it }
+      val naturalEngine = onnxEngine ?: ChatterboxOnnxEngine(modelStore).also {
+        onnxEngine = it
+        onnxEngineInstance = it
+        mainHandler.post { updateSnapshot() }
+      }
       val generated = naturalEngine.generate(
         text = normalized,
         reference = reference,
@@ -929,6 +1010,12 @@ class NarrationPlaybackService : Service() {
 
   private fun stopPlayback() {
     releasePlayers()
+    prebufferGeneration.incrementAndGet()
+    try {
+      onnxEngine?.close()
+    } catch (_: Exception) {}
+    onnxEngine = null
+    onnxEngineInstance = null
     currentState = "idle"
     isSleepTimerActive = false
     sleepTimerEndTimeMs = 0L
@@ -1057,6 +1144,9 @@ class NarrationPlaybackService : Service() {
       pagePreparationReady = pagePreparationReady,
       pagePreparationTotal = pagePreparationTotal,
       errorMessage = lastErrorMessage,
+      engineMode = currentEngineMode,
+      voiceId = currentVoiceId,
+      isModelLoaded = onnxEngine != null,
     )
     currentSnapshot = snapshot
     stateListener?.invoke(snapshot)

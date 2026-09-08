@@ -214,11 +214,22 @@ export function ReaderPlayerBar({
           {/* Voice Picker Button */}
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel="Voice settings"
+            accessibilityLabel="Voice settings and engine mode"
             onPress={onOpenVoicePicker}
             style={[styles.miniPill, { backgroundColor: colors.surfaceMuted }]}
           >
             <Volume2 size={13} color={colors.ink} />
+            <Text style={[styles.miniPillText, { color: colors.ink }]}>
+              {playerState.engineMode === 'chatterbox-local' ? 'Chatterbox' : 'Edge'}
+            </Text>
+            {playerState.engineMode === 'chatterbox-local' && (
+              <View
+                style={[
+                  styles.engineStatusDot,
+                  { backgroundColor: playerState.isModelLoaded ? '#10B981' : '#9CA3AF' },
+                ]}
+              />
+            )}
           </Pressable>
         </View>
       </View>
@@ -516,6 +527,12 @@ const styles = StyleSheet.create({
   miniPillText: {
     fontSize: 11,
     fontWeight: '600',
+  },
+  engineStatusDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    marginLeft: 2,
   },
   controlsRow: {
     flexDirection: 'row',

@@ -80,9 +80,11 @@ class NarrationPlayerModule(reactContext: ReactApplicationContext) : ReactContex
     expression: String?,
     speed: Double?,
     pageSize: Double?,
+    engineMode: String?,
     promise: Promise,
   ) {
     try {
+      val effectiveEngine = engineMode ?: NarrationPlaybackService.activeEngineMode
       val intent = Intent(reactApplicationContext, NarrationPlaybackService::class.java).apply {
         action = NarrationPlaybackService.ACTION_PLAY
         putExtra(NarrationPlaybackService.EXTRA_BOOK_ID, bookId)
@@ -91,6 +93,8 @@ class NarrationPlayerModule(reactContext: ReactApplicationContext) : ReactContex
         putExtra(NarrationPlaybackService.EXTRA_VOICE_ID, voiceId ?: "warm")
         putExtra(NarrationPlaybackService.EXTRA_EXPRESSION, expression ?: "natural")
         putExtra(NarrationPlaybackService.EXTRA_SPEED, (speed ?: 1.0).toFloat())
+        putExtra(NarrationPlaybackService.EXTRA_ENGINE_MODE, effectiveEngine)
+        putExtra(NarrationPlaybackService.EXTRA_EDGE_VOICE, NarrationPlaybackService.activeEdgeVoice)
         if (pageSize != null && pageSize > 0) {
           putExtra(NarrationPlaybackService.EXTRA_PAGE_SIZE, pageSize.toInt())
         }
@@ -219,6 +223,25 @@ class NarrationPlayerModule(reactContext: ReactApplicationContext) : ReactContex
     }
   }
 
+  @ReactMethod
+  fun isModelRunning(promise: Promise) {
+    try {
+      promise.resolve(NarrationPlaybackService.isModelLoaded)
+    } catch (e: Exception) {
+      promise.reject("STATUS_ERROR", e.message, e)
+    }
+  }
+
+  @ReactMethod
+  fun unloadModel(promise: Promise) {
+    try {
+      NarrationPlaybackService.unloadOnnxEngine()
+      promise.resolve(true)
+    } catch (e: Exception) {
+      promise.reject("UNLOAD_ERROR", e.message, e)
+    }
+  }
+
   private fun startService(intent: Intent) {
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
       if (intent.action == NarrationPlaybackService.ACTION_PLAY) {
@@ -258,6 +281,9 @@ class NarrationPlayerModule(reactContext: ReactApplicationContext) : ReactContex
       putInt("pagePreparationReady", snapshot.pagePreparationReady)
       putInt("pagePreparationTotal", snapshot.pagePreparationTotal)
       putString("errorMessage", snapshot.errorMessage)
+      putString("engineMode", snapshot.engineMode)
+      putString("voiceId", snapshot.voiceId)
+      putBoolean("isModelLoaded", snapshot.isModelLoaded)
     }
   }
 }

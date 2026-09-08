@@ -76,14 +76,18 @@ export function NarrationPlayerProvider({ children }: { children: React.ReactNod
       pageSize?: number,
     ) => {
       let effectiveVoice = voiceId;
-      if (!effectiveVoice) {
-        try {
-          const prefs = await narrationPipelineService.getPreferences();
+      let effectiveEngine: string | undefined;
+      try {
+        const prefs = await narrationPipelineService.getPreferences();
+        effectiveEngine = prefs.engineMode;
+        if (!effectiveVoice) {
           effectiveVoice =
             prefs.engineMode === 'chatterbox-local'
               ? prefs.chatterboxVoice || 'warm'
               : prefs.edgeVoice || 'en-US-JennyNeural';
-        } catch {
+        }
+      } catch {
+        if (!effectiveVoice) {
           effectiveVoice = 'warm';
         }
       }
@@ -95,6 +99,7 @@ export function NarrationPlayerProvider({ children }: { children: React.ReactNod
         expression,
         speed ?? playerState.speed,
         pageSize,
+        effectiveEngine,
       );
     },
     [playerState.speed],

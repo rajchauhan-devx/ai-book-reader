@@ -79,6 +79,8 @@ export function VoicePickerModal({
     message: string;
   } | null>(null);
 
+  const [isModelRunning, setIsModelRunning] = useState(false);
+
   useEffect(() => {
     let mounted = true;
     if (visible) {
@@ -102,11 +104,21 @@ export function VoicePickerModal({
           setOpencodeEnabled(cfg.enabled);
         }
       });
+      narrationPlayerService.isModelRunning().then(running => {
+        if (mounted) {
+          setIsModelRunning(running);
+        }
+      });
     }
     return () => {
       mounted = false;
     };
   }, [visible]);
+
+  const handleUnloadModel = async () => {
+    await narrationPlayerService.unloadModel();
+    setIsModelRunning(false);
+  };
 
   const handleSaveOpencodeKey = async (text: string) => {
     setOpencodeKey(text);
@@ -140,6 +152,10 @@ export function VoicePickerModal({
       engineMode: mode,
     });
     await narrationPlayerService.setEngineConfig(mode, edgeVoice);
+    if (mode === 'edge-cloud') {
+      await narrationPlayerService.unloadModel();
+      setIsModelRunning(false);
+    }
     onVoiceChanged?.(updated);
   };
 
@@ -156,6 +172,7 @@ export function VoicePickerModal({
     setSelectedVoiceId(voiceId);
     const updated = await narrationPipelineService.savePreferences({
       voiceId,
+      chatterboxVoice: voiceId,
     });
     onVoiceChanged?.(updated);
   };
@@ -189,13 +206,17 @@ export function VoicePickerModal({
       transparent
       animationType="slide"
       onRequestClose={onClose}>
-      <Pressable style={styles.overlay} onPress={onClose}>
+      <View style={styles.overlay}>
         <Pressable
+          style={StyleSheet.absoluteFill}
+          onPress={onClose}
+          accessibilityLabel="Close voice picker modal"
+        />
+        <View
           style={[
             styles.sheetCard,
             {backgroundColor: colors.surface, borderColor: colors.border},
-          ]}
-          onPress={e => e.stopPropagation()}>
+          ]}>
           <View style={styles.sheetHeader}>
             <View>
               <Text style={[styles.modalTitle, {color: colors.ink}]}>
@@ -216,7 +237,9 @@ export function VoicePickerModal({
 
           <ScrollView
             style={styles.sheetBody}
-            showsVerticalScrollIndicator={false}>
+            contentContainerStyle={styles.sheetBodyContent}
+            keyboardShouldPersistTaps="handled"
+            showsVerticalScrollIndicator={true}>
             {/* ENGINE MODE SELECTION */}
             <Text style={[styles.sectionHeading, {color: colors.inkMuted}]}>
               NARRATION ENGINE MODE
@@ -490,65 +513,133 @@ export function VoicePickerModal({
               </>
             ) : (
               <>
+                {/* CHATTERBOX MODEL STATUS & LIFECYCLE MONITOR */}
+                <View
+                  style={[
+                    styles.modelLifecycleCard,
+                    {
+                      backgroundColor: colors.canvas,
+                      borderColor: isModelRunning ? '#10B981' : colors.border,
+                    },
+                  ]}>
+                  <View style={styles.modelLifecycleHeader}>
+                    <View style={styles.engineIconRow}>
+                      <View
+                        style={[
+                          styles.statusDot,
+                          {backgroundColor: isModelRunning ? '#10B981' : '#6B7280'},
+                        ]}
+                      />
+                      <Text style={[styles.modelStatusTitle, {color: colors.ink}]}>
+                        {isModelRunning ? 'Model Active in RAM' : 'Model Asleep (0% Battery)'}
+                      </Text>
+                    </View>
+                    {isModelRunning && (
+                      <Pressable
+                        accessibilityRole="button"
+                        onPress={handleUnloadModel}
+                        style={[styles.unloadBtn, {borderColor: colors.border}]}>
+                        <Text style={[styles.unloadBtnText, {color: colors.inkMuted}]}>
+                          Unload from RAM
+                        </Text>
+                      </Pressable>
+                    )}
+                  </View>
+                  <Text style={[styles.engineDesc, {color: colors.inkMuted, marginTop: 4}]}>
+                    {isModelRunning
+                      ? 'The ONNX neural weights are loaded in memory for instant speech generation.'
+                      : 'The model is completely unloaded when stopped or closed. It uses 0% CPU and 0% battery when idle.'}
+                  </Text>
+                </View>
+
                 <Text style={[styles.sectionHeading, {color: colors.inkMuted}]}>
                   CHATTERBOX CHARACTER VOICES
                 </Text>
                 <View style={styles.voiceList}>
-                  {voices.map(voice => {
-                    const isSelected = voice.id === selectedVoiceId;
-                    return (
-                      <Pressable
-                        key={voice.id}
-                        accessibilityRole="radio"
-                        accessibilityState={{selected: isSelected}}
-                        onPress={() => handleSelectVoice(voice.id)}
-                        style={[
-                          styles.voiceCard,
-                          {
-                            backgroundColor: colors.canvas,
-                            borderColor: isSelected
-                              ? colors.brand
-                              : colors.border,
-                          },
-                          isSelected && {backgroundColor: colors.brandSoft},
-                        ]}>
-                        <View style={styles.voiceCardHeader}>
-                          <View style={styles.voiceNameRow}>
-                            {voice.engine === 'natural' ? (
-                              <Sparkles size={16} color={colors.brand} />
-                            ) : (
-                              <Volume2 size={16} color={colors.inkMuted} />
-                            )}
-                            <Text
+                  {voices
+                    .filter(v => v.engine === 'natural' || v.engine === 'system')
+                    .map(voice => {
+                      const isSelected = voice.id === selectedVoiceId;
+                      const roleTag =
+                        voice.id === 'warm'
+                          ? 'FICTION · WARMTH'
+                          : voice.id === 'clear'
+                          ? 'NON-FICTION · CLARITY'
+                          : voice.id === 'deep'
+                          ? 'MYSTERY · DRAMA'
+                          : voice.id === 'gentle'
+                          ? 'BEDTIME · CALM'
+                          : 'CHARACTER';
+                      return (
+                        <Pressable
+                          key={voice.id}
+                          accessibilityRole="radio"
+                          accessibilityState={{selected: isSelected}}
+                          onPress={() => handleSelectVoice(voice.id)}
+                          style={[
+                            styles.voiceCard,
+                            {
+                              backgroundColor: colors.canvas,
+                              borderColor: isSelected
+                                ? colors.brand
+                                : colors.border,
+                            },
+                            isSelected && {backgroundColor: colors.brandSoft},
+                          ]}>
+                          <View style={styles.voiceCardHeader}>
+                            <View style={styles.voiceNameRow}>
+                              <Zap size={16} color="#E5A93C" />
+                              <Text
+                                style={[
+                                  styles.voiceName,
+                                  {color: colors.ink},
+                                  isSelected && styles.selectedVoiceName,
+                                ]}>
+                                {voice.name}
+                              </Text>
+                              <View
+                                style={[
+                                  styles.voiceTagPill,
+                                  {
+                                    backgroundColor: isSelected
+                                      ? colors.brand
+                                      : colors.surfaceMuted,
+                                  },
+                                ]}>
+                                <Text
+                                  style={[
+                                    styles.voiceTagText,
+                                    {
+                                      color: isSelected
+                                        ? colors.white
+                                        : colors.inkMuted,
+                                    },
+                                  ]}>
+                                  {roleTag}
+                                </Text>
+                              </View>
+                            </View>
+                            <View
                               style={[
-                                styles.voiceName,
-                                {color: colors.ink},
-                                isSelected && styles.selectedVoiceName,
+                                styles.radioCircle,
+                                {
+                                  borderColor: isSelected
+                                    ? colors.brand
+                                    : colors.border,
+                                },
+                                isSelected && {backgroundColor: colors.brand},
                               ]}>
-                              {voice.name}
-                            </Text>
+                              {isSelected && <Check size={12} color="#FFF" />}
+                            </View>
                           </View>
-                          <View
-                            style={[
-                              styles.radioCircle,
-                              {
-                                borderColor: isSelected
-                                  ? colors.brand
-                                  : colors.border,
-                              },
-                              isSelected && {backgroundColor: colors.brand},
-                            ]}>
-                            {isSelected && <Check size={12} color="#FFF" />}
-                          </View>
-                        </View>
-                        <Text
-                          style={[styles.voiceDesc, {color: colors.inkMuted}]}
-                          numberOfLines={2}>
-                          {voice.descriptor}
-                        </Text>
-                      </Pressable>
-                    );
-                  })}
+                          <Text
+                            style={[styles.voiceDesc, {color: colors.inkMuted}]}
+                            numberOfLines={2}>
+                            {voice.descriptor}
+                          </Text>
+                        </Pressable>
+                      );
+                    })}
                 </View>
 
                 <Text style={[styles.sectionHeading, {color: colors.inkMuted}]}>
@@ -606,8 +697,8 @@ export function VoicePickerModal({
           <View style={styles.sheetFooter}>
             <AppButton label="Done" onPress={onClose} />
           </View>
-        </Pressable>
-      </Pressable>
+        </View>
+      </View>
     </Modal>
   );
 }
@@ -649,6 +740,53 @@ const styles = StyleSheet.create({
   },
   sheetBody: {
     marginBottom: spacing.md,
+  },
+  sheetBodyContent: {
+    paddingBottom: spacing.lg,
+  },
+  modelLifecycleCard: {
+    borderRadius: radius.md,
+    borderWidth: 1,
+    padding: spacing.md,
+    marginVertical: spacing.sm,
+  },
+  modelLifecycleHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  modelStatusTitle: {
+    ...typography.body,
+    fontWeight: '600',
+    fontSize: 14,
+  },
+  statusDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  unloadBtn: {
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 4,
+    borderRadius: radius.sm,
+    borderWidth: 1,
+  },
+  unloadBtnText: {
+    ...typography.small,
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  voiceTagPill: {
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+    marginLeft: spacing.xs,
+  },
+  voiceTagText: {
+    ...typography.label,
+    fontSize: 9,
+    fontWeight: '700',
+    letterSpacing: 0.5,
   },
   sectionHeading: {
     ...typography.label,

@@ -21,6 +21,9 @@ export interface PlayerState {
   pagePreparationReady?: number;
   pagePreparationTotal?: number;
   errorMessage?: string | null;
+  engineMode?: string;
+  voiceId?: string;
+  isModelLoaded?: boolean;
 }
 
 export const initialPlayerState: PlayerState = {
@@ -40,6 +43,9 @@ export const initialPlayerState: PlayerState = {
   pagePreparationReady: 0,
   pagePreparationTotal: 0,
   errorMessage: null,
+  engineMode: 'edge-cloud',
+  voiceId: 'warm',
+  isModelLoaded: false,
 };
 
 const NativePlayer = NativeModules.NarrationPlayer;
@@ -100,6 +106,7 @@ class NarrationPlayerService {
     expression?: string,
     speed?: number,
     pageSize?: number,
+    engineMode?: string,
   ): Promise<boolean> {
     if (!NativePlayer) {
       this.fallbackState = {
@@ -109,6 +116,8 @@ class NarrationPlayerService {
         chapterId,
         sentenceIndex,
         speed: speed ?? this.fallbackState.speed,
+        engineMode: engineMode ?? this.fallbackState.engineMode,
+        voiceId: voiceId ?? this.fallbackState.voiceId,
       };
       this.emitMockState();
       return true;
@@ -121,6 +130,7 @@ class NarrationPlayerService {
       expression ?? 'natural',
       speed ?? 1.0,
       pageSize ?? 20,
+      engineMode ?? null,
     );
   }
 
@@ -228,6 +238,28 @@ class NarrationPlayerService {
     return NativePlayer.setSleepTimer(minutes, endOfChapter);
   }
 
+  async isModelRunning(): Promise<boolean> {
+    if (!NativePlayer?.isModelRunning) {
+      return false;
+    }
+    try {
+      return await NativePlayer.isModelRunning();
+    } catch {
+      return false;
+    }
+  }
+
+  async unloadModel(): Promise<boolean> {
+    if (!NativePlayer?.unloadModel) {
+      return true;
+    }
+    try {
+      return await NativePlayer.unloadModel();
+    } catch {
+      return false;
+    }
+  }
+
   subscribe(listener: (state: PlayerState) => void): () => void {
     if (playerEmitter) {
       const subscription = playerEmitter.addListener(
@@ -264,6 +296,9 @@ class NarrationPlayerService {
       pagePreparationReady: Number(raw.pagePreparationReady) || 0,
       pagePreparationTotal: Number(raw.pagePreparationTotal) || 0,
       errorMessage: raw.errorMessage ? String(raw.errorMessage) : null,
+      engineMode: raw.engineMode ? String(raw.engineMode) : 'edge-cloud',
+      voiceId: raw.voiceId ? String(raw.voiceId) : 'warm',
+      isModelLoaded: Boolean(raw.isModelLoaded),
     };
   }
 
