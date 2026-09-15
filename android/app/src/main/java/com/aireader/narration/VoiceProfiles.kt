@@ -1,5 +1,11 @@
 package com.aireader.narration
 
+import android.content.Context
+import org.json.JSONArray
+import org.json.JSONObject
+import java.io.File
+import java.util.concurrent.ConcurrentHashMap
+
 data class VoiceProfile(
   val id: String,
   val name: String,
@@ -9,6 +15,8 @@ data class VoiceProfile(
   val isDefault: Boolean = false,
   val pitch: Float = 1.0f,
   val speed: Float = 1.0f,
+  val isCustom: Boolean = false,
+  val sampleDurationSec: Double = 0.0,
 )
 
 data class ExpressionPreset(
@@ -20,7 +28,10 @@ data class ExpressionPreset(
 )
 
 object VoiceCatalog {
-  val VOICES = listOf(
+  private val customVoices = ConcurrentHashMap<String, VoiceProfile>()
+  @Volatile private var customVoicesLoaded = false
+
+  val BUILTIN_VOICES = listOf(
     VoiceProfile(
       id = "warm",
       name = "Warm Narrator",
@@ -156,8 +167,111 @@ object VoiceCatalog {
     ),
   )
 
-  fun findVoice(id: String?): VoiceProfile =
-    VOICES.firstOrNull { it.id.equals(id, ignoreCase = true) } ?: VOICES.first()
+  val VOICES: List<VoiceProfile>
+    get() = BUILTIN_VOICES + customVoices.values.toList()
+
+  fun loadCustomVoices(context: Context): List<VoiceProfile> {
+    synchronized(this) {
+      try {
+        val registryFile = File(context.filesDir, "custom_voices/registry.json")
+        if (registryFile.exists()) {
+          val text = registryFile.readText(Charsets.UTF_8)
+          if (text.isNotBlank()) {
+            val jsonArray = JSONArray(text)
+            customVoices.clear()
+            for (i in 0 until jsonArray.length()) {
+              val obj = jsonArray.getJSONObject(i)
+              val profile = jsonToVoiceProfile(obj)
+              val audioFile = File(context.filesDir, profile.referenceAsset ?: "")
+              if (audioFile.exists() && audioFile.length() >= 44) {
+                customVoices[profile.id] = profile
+              }
+            }
+          }
+        }
+        customVoicesLoaded = true
+      } catch (_: Exception) {}
+      return customVoices.values.toList()
+    }
+  }
+
+  fun allVoices(context: Context? = null): List<VoiceProfile> {
+    if (context != null && !customVoicesLoaded) {
+      loadCustomVoices(context)
+    }
+    return BUILTIN_VOICES + customVoices.values.toList()
+  }
+
+  fun addCustomVoice(context: Context, profile: VoiceProfile) {
+    synchronized(this) {
+      if (!customVoicesLoaded) loadCustomVoices(context)
+      customVoices[profile.id] = profile
+      saveRegistry(context)
+    }
+  }
+
+  fun removeCustomVoice(context: Context, voiceId: String): Boolean {
+    synchronized(this) {
+      if (!customVoicesLoaded) loadCustomVoices(context)
+      val removed = customVoices.remove(voiceId) ?: return false
+      try {
+        if (!removed.referenceAsset.isNullOrBlank()) {
+          File(context.filesDir, removed.referenceAsset).delete()
+        }
+      } catch (_: Exception) {}
+      saveRegistry(context)
+      return true
+    }
+  }
+
+  private fun saveRegistry(context: Context) {
+    try {
+      val dir = File(context.filesDir, "custom_voices")
+      dir.mkdirs()
+      val registryFile = File(dir, "registry.json")
+      val jsonArray = JSONArray()
+      for (voice in customVoices.values) {
+        jsonArray.put(voice.toJson())
+      }
+      registryFile.writeText(jsonArray.toString(2), Charsets.UTF_8)
+    } catch (_: Exception) {}
+  }
+
+  private fun VoiceProfile.toJson(): JSONObject = JSONObject().apply {
+    put("id", id)
+    put("name", name)
+    put("descriptor", descriptor)
+    put("engine", engine)
+    put("referenceAsset", referenceAsset)
+    put("isDefault", isDefault)
+    put("pitch", pitch.toDouble())
+    put("speed", speed.toDouble())
+    put("isCustom", isCustom)
+    put("sampleDurationSec", sampleDurationSec)
+  }
+
+  private fun jsonToVoiceProfile(json: JSONObject): VoiceProfile = VoiceProfile(
+    id = json.getString("id"),
+    name = json.getString("name"),
+    descriptor = json.optString("descriptor", "Custom cloned voice"),
+    engine = json.optString("engine", "natural"),
+    referenceAsset = if (json.isNull("referenceAsset")) null else json.optString("referenceAsset").ifBlank { null },
+    isDefault = json.optBoolean("isDefault", false),
+    pitch = json.optDouble("pitch", 1.0).toFloat(),
+    speed = json.optDouble("speed", 1.0).toFloat(),
+    isCustom = json.optBoolean("isCustom", true),
+    sampleDurationSec = json.optDouble("sampleDurationSec", 0.0),
+  )
+
+  fun findVoice(id: String?, context: Context? = null): VoiceProfile {
+    if (context != null && !customVoicesLoaded) {
+      loadCustomVoices(context)
+    }
+    if (id == null) return BUILTIN_VOICES.first()
+    return customVoices[id]
+      ?: BUILTIN_VOICES.firstOrNull { it.id.equals(id, ignoreCase = true) }
+      ?: BUILTIN_VOICES.first()
+  }
 
   fun findExpression(id: String?): ExpressionPreset =
     EXPRESSIONS.firstOrNull { it.id.equals(id, ignoreCase = true) } ?: EXPRESSIONS[1] // natural

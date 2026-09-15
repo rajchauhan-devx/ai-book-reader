@@ -57,6 +57,15 @@ object EdgeTtsEngine {
       .replace("'", "&apos;")
   }
 
+  private fun prepareSpeechContent(text: String): String {
+    // If text already contains valid inline SSML tags, preserve them and only escape unescaped ampersands
+    val hasSsml = text.contains("<break") || text.contains("<emphasis") || text.contains("<mstts:express-as")
+    if (hasSsml) {
+      return text.replace(Regex("&(?!(amp|lt|gt|quot|apos);)"), "&amp;")
+    }
+    return escapeXml(text)
+  }
+
   fun synthesize(
     text: String,
     voiceName: String,
@@ -99,7 +108,7 @@ object EdgeTtsEngine {
           timeZone = TimeZone.getTimeZone("UTC")
         }
         val timestamp = sdf.format(Date())
-        val escaped = escapeXml(text)
+        val speechContent = prepareSpeechContent(text)
 
         val cleanStyle = when (emotionStyle?.lowercase(Locale.ROOT)) {
           "whispering" -> "whispering"
@@ -109,12 +118,59 @@ object EdgeTtsEngine {
           "angry" -> "angry"
           "sad" -> "sad"
           "dramatic" -> "excited"
+          "shouting" -> "shouting"
+          "friendly" -> "friendly"
+          "hopeful" -> "hopeful"
+          "empathetic" -> "empathetic"
+          "narration-relaxed" -> "narration-relaxed"
           else -> null
         }
 
-        val prosody = "<prosody pitch='$pitch' rate='$rate' volume='+0%'>$escaped</prosody>"
+        val styleDegree = when (cleanStyle) {
+          "angry", "terrified", "shouting", "excited" -> "1.8"
+          "whispering" -> "1.6"
+          "cheerful", "sad" -> "1.5"
+          "friendly", "hopeful", "empathetic" -> "1.3"
+          "narration-relaxed" -> "1.2"
+          else -> "1.3"
+        }
+
+        val effectiveRate = if (rate == "+0%") {
+          when (cleanStyle) {
+            "sad" -> "-6%"
+            "whispering" -> "-4%"
+            "terrified" -> "-2%"
+            "narration-relaxed" -> "-2%"
+            "excited", "shouting" -> "+4%"
+            "angry" -> "+2%"
+            "cheerful" -> "+2%"
+            else -> "+0%"
+          }
+        } else rate
+
+        val effectivePitch = if (pitch == "+0Hz") {
+          when (cleanStyle) {
+            "excited", "shouting" -> "+6Hz"
+            "angry" -> "+4Hz"
+            "terrified" -> "+4Hz"
+            "cheerful" -> "+3Hz"
+            "whispering" -> "-2Hz"
+            "sad" -> "-4Hz"
+            else -> "+0Hz"
+          }
+        } else pitch
+
+        val effectiveVolume = when (cleanStyle) {
+          "whispering" -> "-15%"
+          "shouting", "angry", "excited" -> "+15%"
+          "cheerful" -> "+5%"
+          "sad" -> "-5%"
+          else -> "+0%"
+        }
+
+        val prosody = "<prosody pitch='$effectivePitch' rate='$effectiveRate' volume='$effectiveVolume'>$speechContent</prosody>"
         val innerVoice = if (!cleanStyle.isNullOrBlank()) {
-          "<mstts:express-as style='$cleanStyle' styledegree='1.3'>$prosody</mstts:express-as>"
+          "<mstts:express-as style='$cleanStyle' styledegree='$styleDegree'>$prosody</mstts:express-as>"
         } else {
           prosody
         }

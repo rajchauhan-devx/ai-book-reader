@@ -148,6 +148,18 @@ class AudioCacheStore(private val context: Context) {
     return if (dir.exists()) dir.deleteRecursively() else true
   }
 
+  fun removeVoiceAudio(voiceId: String): Boolean {
+    if (!audioRootDir.exists() || !audioRootDir.isDirectory) return true
+    var success = true
+    audioRootDir.listFiles()?.forEach { bookDir ->
+      val voiceDir = File(bookDir, voiceId)
+      if (voiceDir.exists()) {
+        if (!voiceDir.deleteRecursively()) success = false
+      }
+    }
+    return success
+  }
+
   fun removeAllAudio(): Boolean {
     return if (audioRootDir.exists()) audioRootDir.deleteRecursively() else true
   }

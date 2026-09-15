@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
@@ -12,6 +12,7 @@ import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { Screen } from '../components/Screen';
 import { AppButton } from '../components/AppButton';
 import { bookLibraryService } from '../services/bookLibrary';
+import { fixLigatureSplits } from '../services/textNormalizer';
 import { useLibrary } from '../state/LibraryProvider';
 import { useAppTheme } from '../theme/ThemeProvider';
 import { radius, spacing, typography } from '../theme/tokens';
@@ -111,6 +112,63 @@ function BookTextPreview({ bookId }: { bookId: string }) {
     if (page) list.current?.scrollToOffset({ offset: 0, animated: false });
   }, [page]);
 
+  const displayBlocks = useMemo(() => {
+    if (!page?.blocks || page.blocks.length === 0) return [];
+    const result: ChapterPage['blocks'][number][] = [];
+
+    function shouldMergeBlocks(
+      prev: ChapterPage['blocks'][number],
+      curr: ChapterPage['blocks'][number],
+    ): boolean {
+      if (prev.kind !== 'paragraph' || curr.kind !== 'paragraph') return false;
+      const p = prev.text.trim();
+      const c = curr.text.trim();
+      if (!p || !c) return false;
+
+      if (/[-—\u00AD]$/.test(p)) return true;
+
+      const firstChar = c[0];
+      if (firstChar >= 'a' && firstChar <= 'z') return true;
+      if (/^[,;:\]\)}»—]/.test(c)) return true;
+
+      const endsWithTerm = /[.!?”"’»]$/.test(p);
+      if (!endsWithTerm) {
+        if (!/^[“"‘']/.test(c)) {
+          const lastWord = (p.split(/\s+/).pop() || '').toLowerCase();
+          const danglingWords = new Set([
+            'and', 'or', 'but', 'a', 'an', 'the', 'of', 'to', 'in', 'on', 'at', 'with',
+            'for', 'from', 'as', 'by', 'were', 'was', 'is', 'are', 'had', 'have', 'has',
+            'would', 'could', 'should', 'been', 'that', 'which', 'who', 'whose', 'what',
+            'where', 'when', 'if', 'than', 'into', 'onto', 'upon', 'so', 'nor', 'yet',
+            'my', 'his', 'her', 'their', 'our', 'your', 'its', 'like', 'not', 'too',
+          ]);
+          if (danglingWords.has(lastWord) || /[,;:]$/.test(p)) return true;
+          if (/[a-zA-Z0-9]$/.test(p)) return true;
+        }
+      }
+      return false;
+    }
+
+    for (const block of page.blocks) {
+      if (result.length === 0) {
+        result.push(block);
+      } else {
+        const last = result[result.length - 1];
+        if (shouldMergeBlocks(last, block)) {
+          const separator = /[-—\u00AD]$/.test(last.text.trim()) ? '' : ' ';
+          const mergedText = `${last.text.trim()}${separator}${block.text.trim()}`;
+          result[result.length - 1] = {
+            ...last,
+            text: mergedText,
+          };
+        } else {
+          result.push(block);
+        }
+      }
+    }
+    return result;
+  }, [page?.blocks]);
+
   function chooseChapter(index: number) {
     setOffset(0);
     setChapterIndex(index);
@@ -160,7 +218,7 @@ function BookTextPreview({ bookId }: { bookId: string }) {
     <Screen scroll={false}>
       <FlatList
         ref={list}
-        data={page?.blocks ?? []}
+        data={displayBlocks}
         keyExtractor={item => item.id}
         contentContainerStyle={styles.content}
         ListHeaderComponent={
@@ -218,7 +276,7 @@ function BookTextPreview({ bookId }: { bookId: string }) {
               { color: colors.ink },
             ]}
           >
-            {item.text}
+            {fixLigatureSplits(item.text)}
           </Text>
         )}
         ListFooterComponent={

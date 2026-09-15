@@ -2,6 +2,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   opencodeMimoService,
   fixLigatureSplits,
+  detectLocalSpeechEmotion,
   DEFAULT_OPENCODE_BASE_URL,
   DEFAULT_OPENCODE_MODEL,
 } from '../src/services/opencodeMimoService';
@@ -120,6 +121,53 @@ describe('OpenCodeMimoService connection test', () => {
   });
 });
 
+describe('detectLocalSpeechEmotion', () => {
+  it('detects whispering cues', () => {
+    const res = detectLocalSpeechEmotion('"Keep your voice down," she whispered.');
+    expect(res.style).toBe('whispering');
+  });
+
+  it('detects terrified cues', () => {
+    const res = detectLocalSpeechEmotion('"What is that thing?!" Jason stammered in terror.');
+    expect(res.style).toBe('terrified');
+  });
+
+  it('detects shouting / extreme screams', () => {
+    const res = detectLocalSpeechEmotion('"GET OUT NOW!" she screamed.');
+    expect(res.style).toBe('shouting');
+  });
+
+  it('detects angry cues', () => {
+    const res = detectLocalSpeechEmotion('"Don\'t you dare touch that," he snarled furiously.');
+    expect(res.style).toBe('angry');
+  });
+
+  it('detects cheerful cues', () => {
+    const res = detectLocalSpeechEmotion('"That was hilarious!" they laughed happily.');
+    expect(res.style).toBe('cheerful');
+  });
+
+  it('detects sad / weeping cues', () => {
+    const res = detectLocalSpeechEmotion('"I cannot bear this loss," she sobbed tearfully.');
+    expect(res.style).toBe('sad');
+  });
+
+  it('detects hopeful / pleading cues', () => {
+    const res = detectLocalSpeechEmotion('"Please give me one more chance," he pleaded warmly.');
+    expect(res.style).toBe('hopeful');
+  });
+
+  it('detects excited exclamation in dialogue', () => {
+    const res = detectLocalSpeechEmotion('"Look over there!"');
+    expect(res.style).toBe('excited');
+  });
+
+  it('defaults narrative descriptions to narration-relaxed', () => {
+    const res = detectLocalSpeechEmotion('The ancient oak tree stood silently under the autumn sky.');
+    expect(res.style).toBe('narration-relaxed');
+  });
+});
+
 describe('OpenCodeMimoService refinePageSentences', () => {
   const originalFetch = global.fetch;
 
@@ -127,33 +175,34 @@ describe('OpenCodeMimoService refinePageSentences', () => {
     global.fetch = originalFetch;
   });
 
-  it('uses instant local fallback when disabled', async () => {
+  it('uses smart on-device emotion detection when disabled', async () => {
     await opencodeMimoService.setApiKey('some-key');
     await opencodeMimoService.setEnabled(false);
 
     const sentences = [
       { index: 0, text: 'His cup was fil ed to the brim.' },
-      { index: 1, text: 'The stal ion leapt forward.' },
+      { index: 1, text: '"Hurry up!" yel ed Jason.' },
     ];
 
     const refined = await opencodeMimoService.refinePageSentences(sentences);
     expect(refined).toHaveLength(2);
     expect(refined[0].text).toBe('His cup was filled to the brim.');
-    expect(refined[0].style).toBe('neutral');
-    expect(refined[1].text).toBe('The stallion leapt forward.');
+    expect(refined[0].style).toBe('narration-relaxed');
+    expect(refined[1].text).toBe('"Hurry up!" yelled Jason.');
+    expect(refined[1].style).toBe('shouting');
   });
 
-  it('uses instant local fallback when no API key is set', async () => {
+  it('uses smart on-device emotion detection when no API key is set', async () => {
     await opencodeMimoService.setApiKey('');
     await opencodeMimoService.setEnabled(true);
 
     const sentences = [
-      { index: 0, text: '"Run!" yel ed Jason.' },
+      { index: 0, text: '"Quiet!" she whispered.' },
     ];
 
     const refined = await opencodeMimoService.refinePageSentences(sentences);
-    expect(refined[0].text).toBe('"Run!" yelled Jason.');
-    expect(refined[0].style).toBe('neutral');
+    expect(refined[0].text).toBe('"Quiet!" she whispered.');
+    expect(refined[0].style).toBe('whispering');
   });
 
   it('parses MiMo v2.5 refined sentences and styles correctly', async () => {
@@ -188,7 +237,7 @@ describe('OpenCodeMimoService refinePageSentences', () => {
     expect(refined[1].style).toBe('whispering');
   });
 
-  it('falls back gracefully to local ligature fix if API call throws an error', async () => {
+  it('falls back gracefully to smart local emotion if API call throws an error', async () => {
     await opencodeMimoService.setApiKey('test-key');
     await opencodeMimoService.setEnabled(true);
 
@@ -196,10 +245,12 @@ describe('OpenCodeMimoService refinePageSentences', () => {
 
     const sentences = [
       { index: 0, text: 'The dark stal ion galloped.' },
+      { index: 1, text: '"Stop!" he shouted.' },
     ];
 
     const refined = await opencodeMimoService.refinePageSentences(sentences);
     expect(refined[0].text).toBe('The dark stallion galloped.');
-    expect(refined[0].style).toBe('neutral');
+    expect(refined[0].style).toBe('narration-relaxed');
+    expect(refined[1].style).toBe('shouting');
   });
 });

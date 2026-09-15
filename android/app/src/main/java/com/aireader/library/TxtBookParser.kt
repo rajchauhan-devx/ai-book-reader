@@ -74,8 +74,9 @@ internal object TxtBookParser {
       while (sentenceEnd != BreakIterator.DONE) {
         check()
         val original = raw.substring(sentenceStart, sentenceEnd)
-        val normalized = Normalizer.normalize(original, Normalizer.Form.NFC)
+        val nfc = Normalizer.normalize(original, Normalizer.Form.NFC)
           .replace(narrationWhitespace, " ").trim()
+        val normalized = com.aireader.narration.TextNormalizer.fixLigatureSplits(nfc)
         if (normalized.isNotEmpty()) {
           if (++sentenceCount > MAX_SENTENCES) limit("This book has more than 100,000 sentences.")
           val sentenceAnchor = "txt:utf16:${start + sentenceStart}-${start + sentenceEnd}"

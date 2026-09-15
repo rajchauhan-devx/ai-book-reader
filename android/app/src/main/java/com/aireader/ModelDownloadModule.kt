@@ -64,7 +64,10 @@ class ModelDownloadModule(reactContext: ReactApplicationContext) : ReactContextB
       return
     }
     reactApplicationContext.getSharedPreferences(ModelDownloadWorker.PREFS, Context.MODE_PRIVATE)
-      .edit().putBoolean(ModelDownloadWorker.PREF_PAUSED, false).apply()
+      .edit()
+      .putBoolean(ModelDownloadWorker.PREF_PAUSED, false)
+      .putBoolean("wifi_only", wifiOnly)
+      .apply()
     workManager.enqueueUniqueWork(
       ModelDownloadWorker.UNIQUE_WORK_NAME,
       ExistingWorkPolicy.REPLACE,
@@ -119,8 +122,17 @@ class ModelDownloadModule(reactContext: ReactApplicationContext) : ReactContextB
         workInfo.progress.getLong(ModelDownloadWorker.EVENT_BYTES, partialBytes),
         workInfo.progress.getString(ModelDownloadWorker.EVENT_MESSAGE) ?: "Downloading natural voice",
       )
-      workInfo?.state == WorkInfo.State.ENQUEUED || workInfo?.state == WorkInfo.State.BLOCKED ->
-        Triple("checking", partialBytes, "Waiting for the selected network")
+      workInfo?.state == WorkInfo.State.ENQUEUED || workInfo?.state == WorkInfo.State.BLOCKED -> {
+        val wifiOnly = reactApplicationContext
+          .getSharedPreferences(ModelDownloadWorker.PREFS, Context.MODE_PRIVATE)
+          .getBoolean("wifi_only", true)
+        val msg = if (wifiOnly) {
+          "Waiting for unmetered Wi-Fi. Turn off 'Download over Wi-Fi only' if using mobile data."
+        } else {
+          "Waiting for network connection…"
+        }
+        Triple("checking", partialBytes, msg)
+      }
       workInfo?.state == WorkInfo.State.FAILED -> Triple(
         "failed",
         workInfo.outputData.getLong(ModelDownloadWorker.EVENT_BYTES, partialBytes),

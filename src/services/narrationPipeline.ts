@@ -17,6 +17,14 @@ export type VoiceProfile = {
   descriptor: string;
   engine: 'natural' | 'system' | 'edge';
   isDefault: boolean;
+  isCustom?: boolean;
+  sampleDurationSec?: number;
+};
+
+export type AudioSelection = {
+  uri: string;
+  name: string;
+  size: number;
 };
 
 export type ExpressionPreset = {
@@ -332,6 +340,42 @@ class NarrationPipelineService {
       return 0;
     }
     return await nativeEngine.getGeneratedAudioBytes();
+  }
+
+  async pickReferenceAudio(): Promise<AudioSelection | null> {
+    if (!nativeEngine?.pickReferenceAudio) {
+      throw new Error('Audio picker is not available on this platform.');
+    }
+    const result = await nativeEngine.pickReferenceAudio();
+    if (!result || typeof result !== 'object') return null;
+    return {
+      uri: typeof result.uri === 'string' ? result.uri : '',
+      name: typeof result.name === 'string' ? result.name : 'audio.mp3',
+      size: Number(result.size) || 0,
+    };
+  }
+
+  async importCustomVoice(uri: string, name: string): Promise<VoiceProfile> {
+    if (!nativeEngine?.importCustomVoice) {
+      throw new Error('Custom voice import is not available.');
+    }
+    const result = await nativeEngine.importCustomVoice(uri, name);
+    return {
+      id: String(result.id),
+      name: String(result.name),
+      descriptor: String(result.descriptor),
+      engine: 'natural',
+      isDefault: false,
+      isCustom: true,
+      sampleDurationSec: Number(result.sampleDurationSec) || 0,
+    };
+  }
+
+  async deleteCustomVoice(voiceId: string): Promise<boolean> {
+    if (!nativeEngine?.deleteCustomVoice) {
+      return false;
+    }
+    return await nativeEngine.deleteCustomVoice(voiceId);
   }
 
   subscribeChapterProgress(

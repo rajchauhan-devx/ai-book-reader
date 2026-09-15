@@ -127,7 +127,15 @@ internal object EpubBookParser {
           var kind = "paragraph"
           var anchor = "epub:$path:block:0"
           fun flush() {
-            if (content.isNotBlank()) builder.block(if (kind == "pre") content.toString() else content.toString().replace(space, " "), "$anchor:segment:${segment++}", if (kind == "pre") "paragraph" else kind)
+            if (content.isNotBlank()) {
+              val raw = if (kind == "pre") content.toString() else content.toString().replace(space, " ")
+              val cleaned = if (kind == "pre") raw else com.aireader.narration.TextNormalizer.fixLigatureSplits(
+                raw.replace(Regex("[\\u00AD\\u200B\\uFEFF]"), "")
+              )
+              if (cleaned.isNotBlank()) {
+                builder.block(cleaned, "$anchor:segment:${segment++}", if (kind == "pre") "paragraph" else kind)
+              }
+            }
             content.setLength(0)
           }
           NodeTraversor.traverse(object : NodeVisitor {
@@ -166,7 +174,12 @@ internal object EpubBookParser {
         return builder.finish(VERSION, elements(opf, "title").firstOrNull()?.text(), elements(opf, "creator").firstOrNull()?.text(), warnings, cover)
       }
     } catch (error: PreparationFailure) { throw error }
-    catch (_: Exception) { throw PreparationFailure("BOOK_INVALID_EPUB", "This EPUB is damaged or has unsupported markup. Try another edition.") }
+    catch (error: Exception) {
+      throw PreparationFailure(
+        "BOOK_INVALID_EPUB",
+        "This EPUB is damaged or has unsupported markup. Try another edition.",
+      ).apply { initCause(error) }
+    }
   }
 
   private fun elements(root: Element, name: String) = root.getAllElements().filter { it.tagName().substringAfter(':').equals(name, true) }

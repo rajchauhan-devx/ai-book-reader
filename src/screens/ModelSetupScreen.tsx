@@ -54,7 +54,7 @@ export function ModelSetupScreen() {
   const isVerifying = status.state === 'verifying';
   const isBusy = isChecking || isDownloading || isVerifying;
   const isReady = status.state === 'ready';
-  const hasProgress = status.downloadedBytes > 0 || isBusy;
+  const hasProgress = status.downloadedBytes > 0 || isBusy || status.state === 'failed';
   const voiceBusy =
     voiceStatus.state === 'preparing' ||
     voiceStatus.state === 'generating' ||
@@ -67,6 +67,14 @@ export function ModelSetupScreen() {
       ).catch(() => undefined);
     }
     await startDownload(wifiOnly);
+  };
+
+  const handleWifiToggle = async () => {
+    const nextWifiOnly = !wifiOnly;
+    setWifiOnly(nextWifiOnly);
+    if (isChecking) {
+      await startDownload(nextWifiOnly);
+    }
   };
 
   const statusTitle = {
@@ -171,9 +179,12 @@ export function ModelSetupScreen() {
       <Pressable
         accessibilityRole="switch"
         accessibilityState={{checked: wifiOnly}}
-        disabled={isBusy || isReady}
-        onPress={() => setWifiOnly(value => !value)}
-        style={[styles.switchRow, (isBusy || isReady) && styles.disabled]}>
+        disabled={isDownloading || isVerifying || isReady}
+        onPress={handleWifiToggle}
+        style={[
+          styles.switchRow,
+          (isDownloading || isVerifying || isReady) && styles.disabled,
+        ]}>
         <View style={[styles.wifiIcon, {backgroundColor: colors.surfaceMuted}]}>
           <Wifi size={20} color={colors.brand} />
         </View>
@@ -300,7 +311,13 @@ export function ModelSetupScreen() {
         </View>
       ) : (
         <AppButton
-          label={status.state === 'paused' ? 'Resume download' : 'Download and install'}
+          label={
+            status.state === 'paused'
+              ? 'Resume download'
+              : status.state === 'failed'
+                ? 'Retry download'
+                : 'Download and install'
+          }
           icon={Download}
           fullWidth
           onPress={beginDownload}

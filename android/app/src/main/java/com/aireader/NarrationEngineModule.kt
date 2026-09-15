@@ -17,12 +17,19 @@ import androidx.work.ExistingWorkPolicy
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkInfo
 import androidx.work.WorkManager
+import android.app.Activity
+import android.net.Uri
+import android.provider.OpenableColumns
 import com.aireader.library.LibraryDatabase
 import com.aireader.narration.AudioCacheStore
+import com.aireader.narration.AudioDecoder
 import com.aireader.narration.ChapterNarrationWorker
 import com.aireader.narration.TextNormalizer
 import com.aireader.narration.VoiceCatalog
+import com.aireader.narration.VoiceProfile
+import com.facebook.react.bridge.ActivityEventListener
 import com.facebook.react.bridge.Arguments
+import com.facebook.react.bridge.BaseActivityEventListener
 import com.facebook.react.bridge.Promise
 import com.facebook.react.bridge.ReactApplicationContext
 import com.facebook.react.bridge.ReactContextBaseJavaModule
@@ -42,6 +49,7 @@ class NarrationEngineModule(reactContext: ReactApplicationContext) : ReactContex
     private const val PREFS = "narration-engine"
     private const val PREF_MODE = "performance-mode"
     private const val SAMPLE_TEXT = "Every great story begins with a single page, and a voice that makes the words feel alive."
+    private const val PICK_AUDIO_REQUEST = 4102
   }
 
   private val executor = Executors.newSingleThreadExecutor()
@@ -55,8 +63,62 @@ class NarrationEngineModule(reactContext: ReactApplicationContext) : ReactContex
   private var engine: ChatterboxOnnxEngine? = null
   private var player: MediaPlayer? = null
   private var listenerCount = 0
+  private var audioPickerPromise: Promise? = null
   @Volatile private var state = "idle"
   @Volatile private var message = "Ready to test voice"
+
+  private val audioPickerListener: ActivityEventListener = object : BaseActivityEventListener() {
+    override fun onActivityResult(
+      activity: Activity,
+      requestCode: Int,
+      resultCode: Int,
+      data: Intent?,
+    ) {
+      if (requestCode != PICK_AUDIO_REQUEST) return
+      val promise = synchronized(this@NarrationEngineModule) {
+        audioPickerPromise.also { audioPickerPromise = null }
+      } ?: return
+
+      val uri = data?.data
+      if (resultCode != Activity.RESULT_OK || uri == null) {
+        promise.resolve(null)
+        return
+      }
+
+      executor.execute {
+        try {
+          var name = "reference_audio.mp3"
+          var size = 0L
+          val cursor = reactApplicationContext.contentResolver.query(
+            uri,
+            arrayOf(OpenableColumns.DISPLAY_NAME, OpenableColumns.SIZE),
+            null, null, null
+          )
+          cursor?.use {
+            if (it.moveToFirst()) {
+              val nameIdx = it.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+              if (nameIdx >= 0) name = it.getString(nameIdx) ?: name
+              val sizeIdx = it.getColumnIndex(OpenableColumns.SIZE)
+              if (sizeIdx >= 0) size = it.getLong(sizeIdx)
+            }
+          }
+
+          val map = Arguments.createMap().apply {
+            putString("uri", uri.toString())
+            putString("name", name)
+            putDouble("size", size.toDouble())
+          }
+          promise.resolve(map)
+        } catch (error: Exception) {
+          promise.reject("AUDIO_PICK_FAILED", error.message, error)
+        }
+      }
+    }
+  }
+
+  init {
+    reactApplicationContext.addActivityEventListener(audioPickerListener)
+  }
 
   override fun getName(): String = "NarrationEngine"
 
@@ -173,14 +235,17 @@ class NarrationEngineModule(reactContext: ReactApplicationContext) : ReactContex
 
   @ReactMethod
   fun getCuratedVoices(promise: Promise) {
+    val allVoices = VoiceCatalog.allVoices(reactApplicationContext)
     val voicesArray = Arguments.createArray()
-    for (v in VoiceCatalog.VOICES) {
+    for (v in allVoices) {
       val m = Arguments.createMap().apply {
         putString("id", v.id)
         putString("name", v.name)
         putString("descriptor", v.descriptor)
         putString("engine", v.engine)
         putBoolean("isDefault", v.isDefault)
+        putBoolean("isCustom", v.isCustom)
+        putDouble("sampleDurationSec", v.sampleDurationSec)
       }
       voicesArray.pushMap(m)
     }
@@ -200,6 +265,110 @@ class NarrationEngineModule(reactContext: ReactApplicationContext) : ReactContex
       putArray("expressions", expressionsArray)
     }
     promise.resolve(result)
+  }
+
+  @ReactMethod
+  fun pickReferenceAudio(promise: Promise) {
+    val activity = reactApplicationContext.currentActivity
+    if (activity == null) {
+      promise.reject("AUDIO_PICK_UNAVAILABLE", "The file picker is not available right now.")
+      return
+    }
+    synchronized(this) {
+      if (audioPickerPromise != null) {
+        promise.reject("AUDIO_PICK_BUSY", "The audio picker is already open.")
+        return
+      }
+      audioPickerPromise = promise
+    }
+
+    val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+      addCategory(Intent.CATEGORY_OPENABLE)
+      type = "audio/*"
+      putExtra(
+        Intent.EXTRA_MIME_TYPES,
+        arrayOf("audio/*", "audio/mpeg", "audio/mp3", "audio/wav", "audio/x-wav", "audio/m4a", "audio/mp4", "audio/aac", "audio/ogg", "audio/flac")
+      )
+      addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+    }
+
+    try {
+      reactApplicationContext.runOnUiQueueThread {
+        try {
+          activity.startActivityForResult(intent, PICK_AUDIO_REQUEST)
+        } catch (error: Exception) {
+          synchronized(this) { audioPickerPromise = null }
+          promise.reject("AUDIO_PICK_UNAVAILABLE", "No audio picker could be opened.", error)
+        }
+      }
+    } catch (error: Exception) {
+      synchronized(this) { audioPickerPromise = null }
+      promise.reject("AUDIO_PICK_UNAVAILABLE", "No audio picker could be opened.", error)
+    }
+  }
+
+  @ReactMethod
+  fun importCustomVoice(uriValue: String, voiceName: String, promise: Promise) {
+    executor.execute {
+      try {
+        val uri = Uri.parse(uriValue)
+        val cleanName = voiceName.trim().take(60).ifEmpty { "Custom Narrator" }
+        val voiceId = "custom_" + System.currentTimeMillis()
+
+        val customDir = File(reactApplicationContext.filesDir, "custom_voices")
+        customDir.mkdirs()
+        val targetWav = File(customDir, "$voiceId.wav")
+
+        val durationSec = AudioDecoder.decodeTo24kHzMonoWav(
+          context = reactApplicationContext,
+          uri = uri,
+          targetFile = targetWav,
+          maxSeconds = 12,
+          targetSampleRate = 24_000,
+        )
+
+        val profile = VoiceProfile(
+          id = voiceId,
+          name = cleanName,
+          descriptor = "Custom cloned voice · ${"%.1f".format(durationSec)}s sample",
+          engine = "natural",
+          referenceAsset = "custom_voices/$voiceId.wav",
+          isDefault = false,
+          isCustom = true,
+          sampleDurationSec = durationSec,
+        )
+
+        VoiceCatalog.addCustomVoice(reactApplicationContext, profile)
+
+        val result = Arguments.createMap().apply {
+          putString("id", profile.id)
+          putString("name", profile.name)
+          putString("descriptor", profile.descriptor)
+          putString("engine", profile.engine)
+          putBoolean("isDefault", profile.isDefault)
+          putBoolean("isCustom", profile.isCustom)
+          putDouble("sampleDurationSec", profile.sampleDurationSec)
+        }
+        promise.resolve(result)
+      } catch (error: Exception) {
+        promise.reject("CUSTOM_VOICE_IMPORT_FAILED", error.message, error)
+      }
+    }
+  }
+
+  @ReactMethod
+  fun deleteCustomVoice(voiceId: String, promise: Promise) {
+    executor.execute {
+      try {
+        val removed = VoiceCatalog.removeCustomVoice(reactApplicationContext, voiceId)
+        if (removed) {
+          cacheStore.removeVoiceAudio(voiceId)
+        }
+        promise.resolve(removed)
+      } catch (error: Exception) {
+        promise.reject("CUSTOM_VOICE_DELETE_FAILED", error.message, error)
+      }
+    }
   }
 
   @ReactMethod

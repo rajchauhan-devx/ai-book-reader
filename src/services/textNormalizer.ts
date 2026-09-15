@@ -264,21 +264,128 @@ export function normalizeNarrationText(text: string): string {
   // Normalize numbers, currencies, decimals
   normalized = normalizeNumbersAndCurrencies(normalized);
 
-  // Fix EPUB/OCR ligature splits (e.g., "fil ed" -> "filled", "stal ion" -> "stallion")
-  normalized = normalized.replace(/\bFinal y\b/g, 'Finally');
-  normalized = normalized.replace(/\bfinal y\b/g, 'finally');
-  normalized = normalized.replace(/\bmarshmal ow(s)?\b/gi, 'marshmallow$1');
-  cleanedLigatures: {
-    normalized = normalized.replace(/\bstal ion(s)?\b/gi, 'stallion$1');
-    normalized = normalized.replace(/\bhil\s+([,.\!?;:])/g, 'hill$1');
-    normalized = normalized.replace(/\bhil\b(?!\s*([a-zA-Z]))/g, 'hill');
-    normalized = normalized.replace(/\b(fil|yel|cal|kil|pul|rol|bel|dwi|stil|spe|sme|spi|dri|chi|gri|thr|swel|fulfi) (ed|ing|er|est)\b/gi, '$1l$2');
-    normalized = normalized.replace(/\b([a-zA-Z]{3,}) (ly)\b/gi, '$1$2');
-    normalized = normalized.replace(/\s+([,.\!?;:])/g, '$1');
-  }
+  // Apply ligature and spacing fixes
+  normalized = fixLigatureSplits(normalized);
 
-  // Collapse multiple spaces
-  normalized = normalized.replace(/[ \t]+/g, ' ').trim();
-
-  return normalized;
+  return normalized.replace(/[ \t]+/g, ' ').trim();
 }
+
+export function fixLigatureSplits(rawText: string): string {
+  if (!rawText) return '';
+  let text = rawText;
+
+  // Strip soft hyphens and invisible zero-width markers
+  text = text.replace(/\u00AD/g, '')
+    .replace(/\u200B/g, '')
+    .replace(/\uFEFF/g, '')
+    .replace(/\u00A0/g, ' ');
+
+  // De-hyphenate words broken by line-break or spaced hyphens: e.g. "in- formation" -> "information"
+  text = text.replace(/(\b[A-Za-z]{2,})-(?:[ \t]*\r?\n[ \t]*|[ \t]+)([a-z]{2,}\b)/g, (_, prefix, suffix) => {
+    if (/^(self|well|half|all|ex|non|anti)$/i.test(prefix)) {
+      return `${prefix}-${suffix}`;
+    }
+    return `${prefix}${suffix}`;
+  });
+
+  // Contraction single-l ligature drops: "We'l" -> "We'll", "I'l" -> "I'll", etc.
+  text = text.replace(/\b(we|i|you|he|she|they|it|who|that|there|what)['’]l\b/gi, (match, pronoun) => {
+    return `${pronoun}'ll`;
+  });
+
+  // Common words where 'll' was reduced to single 'l'
+  text = text.replace(/\bcal\b(?=[ \t]+[A-Za-z]|[,.!?;:]|$)/gi, match => {
+    return match[0] === match[0].toUpperCase() ? 'Call' : 'call';
+  });
+  text = text.replace(/\bstil\b/gi, match => match[0] === match[0].toUpperCase() ? 'Still' : 'still');
+  text = text.replace(/\bsmal\b/gi, match => match[0] === match[0].toUpperCase() ? 'Small' : 'small');
+  text = text.replace(/\btal\b/gi, match => match[0] === match[0].toUpperCase() ? 'Tall' : 'tall');
+  text = text.replace(/\byel\b/gi, match => match[0] === match[0].toUpperCase() ? 'Yell' : 'yell');
+  text = text.replace(/\bfal\b/gi, match => match[0] === match[0].toUpperCase() ? 'Fall' : 'fall');
+  text = text.replace(/\bwal\b/gi, match => match[0] === match[0].toUpperCase() ? 'Wall' : 'wall');
+  text = text.replace(/\bbal\b/gi, match => match[0] === match[0].toUpperCase() ? 'Ball' : 'ball');
+  text = text.replace(/\btel\b/gi, match => match[0] === match[0].toUpperCase() ? 'Tell' : 'tell');
+  text = text.replace(/\bpul\b/gi, match => match[0] === match[0].toUpperCase() ? 'Pull' : 'pull');
+  text = text.replace(/\bkil\b/gi, match => match[0] === match[0].toUpperCase() ? 'Kill' : 'kill');
+  text = text.replace(/\bwel\b(?=[ \t]*,|[ \t]+(?:done|known|said|thought|off|being|as|to))/gi, match =>
+    match[0] === match[0].toUpperCase() ? 'Well' : 'well'
+  );
+  text = text.replace(/(?<=\b(?:as|very|how)[ \t]+)wel\b/gi, match =>
+    match[0] === match[0].toUpperCase() ? 'Well' : 'well'
+  );
+  text = text.replace(/\bal\b(?=[ \t]+(?:of|the|right|day|night|over|about|around|alone|along|together|clear))/gi, match =>
+    match[0] === match[0].toUpperCase() ? 'All' : 'all'
+  );
+  text = text.replace(/(?<=\b(?:at|with|in)[ \t]+)al\b/gi, match =>
+    match[0] === match[0].toUpperCase() ? 'All' : 'all'
+  );
+
+  // Fix EPUB/OCR ligature splits (e.g., "fil ed" -> "filled", "stal ion" -> "stallion")
+  text = text.replace(/\bFinal y\b/g, 'Finally');
+  text = text.replace(/\bfinal y\b/g, 'finally');
+  text = text.replace(/\bmarshmal ow(s)?\b/gi, 'marshmallow$1');
+  text = text.replace(/\bstal ion(s)?\b/gi, 'stallion$1');
+  text = text.replace(/\bhil\s+([,.\!?;:])/g, 'hill$1');
+  text = text.replace(/\bhil\b(?!\s*([a-zA-Z]))/g, 'hill');
+  text = text.replace(/\b(fil|yel|cal|kil|pul|rol|bel|dwi|stil|spe|sme|spi|dri|chi|gri|thr|swel|fulfi) (ed|ing|er|est)\b/gi, '$1l$2');
+  text = text.replace(/\b([a-zA-Z]{3,}) (ly)\b/gi, '$1$2');
+
+  // Common ff, fi, fl, ffi, ffl ligature dropouts frequently found in PDFs
+  text = text.replace(/\bof fice(s|r|rs)?\b/gi, 'office$1');
+  text = text.replace(/\bof fer(s|ed|ing)?\b/gi, 'offer$1');
+  text = text.replace(/\bof ficial(s|ly)?\b/gi, 'official$1');
+  text = text.replace(/\bof fspring\b/gi, 'offspring');
+  text = text.replace(/\bof fense(s)?\b/gi, 'offense$1');
+  text = text.replace(/\bef fect(s|ive|ively)?\b/gi, 'effect$1');
+  text = text.replace(/\bef fort(s|less)?\b/gi, 'effort$1');
+  text = text.replace(/\baf ter(wards|noon|noons)?\b/gi, 'after$1');
+  text = text.replace(/\baf fair(s)?\b/gi, 'affair$1');
+  text = text.replace(/\baf ford(able|s|ed|ing)?\b/gi, 'afford$1');
+  text = text.replace(/\baf fect(s|ed|ing)?\b/gi, 'affect$1');
+  text = text.replace(/\bdif fer(ent|ently|ence|ences|s|ed|ing)?\b/gi, 'differ$1');
+  text = text.replace(/\bdif ficult(y|ies)?\b/gi, 'difficult$1');
+  text = text.replace(/\bsuf fer(s|ed|ing|ings)?\b/gi, 'suffer$1');
+  text = text.replace(/\btra ffic\b/gi, 'traffic');
+  text = text.replace(/\bstaf f(s)?\b/gi, 'staff$1');
+  text = text.replace(/\bclif f(s)?\b/gi, 'cliff$1');
+  text = text.replace(/\bstif f(ly|en|ness)?\b/gi, 'stiff$1');
+  text = text.replace(/\bcon flict(s|ed|ing)?\b/gi, 'conflict$1');
+  text = text.replace(/\bcon firm(s|ed|ing|ation)?\b/gi, 'confirm$1');
+  text = text.replace(/\bcon fident(ly|ce)?\b/gi, 'confident$1');
+  text = text.replace(/\bcon fuse(s|d|ing|ion)?\b/gi, 'confuse$1');
+  text = text.replace(/\bcon fession(s)?\b/gi, 'confession$1');
+  text = text.replace(/\bin fluence(s|d)?\b/gi, 'influence$1');
+  text = text.replace(/\bin form(s|ed|ing|ation)?\b/gi, 'inform$1');
+  text = text.replace(/\bre flect(s|ed|ing|ion|ions)?\b/gi, 'reflect$1');
+  text = text.replace(/\bpro fessor(s)?\b/gi, 'professor$1');
+  text = text.replace(/\bde fine(s|d)?\b/gi, 'define$1');
+  text = text.replace(/\bde finite(ly)?\b/gi, 'definite$1');
+  text = text.replace(/\bfi nd(s|ing)?\b/gi, 'find$1');
+  text = text.replace(/\bfi rst(ly)?\b/gi, 'first$1');
+  text = text.replace(/\bfi ve\b/gi, 'five');
+  text = text.replace(/\bfi re(s|d|ing)?\b/gi, 'fire$1');
+  text = text.replace(/\bfi nal(ly|s)?\b/gi, 'final$1');
+  text = text.replace(/\bfi gure(s|d)?\b/gi, 'figure$1');
+  text = text.replace(/\bfl ow(s|ed|ing)?\b/gi, 'flow$1');
+  text = text.replace(/\bfl y(ing)?\b/gi, 'fly$1');
+  text = text.replace(/\bfl ight(s)?\b/gi, 'flight$1');
+  text = text.replace(/\bfl ame(s)?\b/gi, 'flame$1');
+  text = text.replace(/\bfl ash(es|ed|ing)?\b/gi, 'flash$1');
+  text = text.replace(/\bfl oor(s)?\b/gi, 'floor$1');
+
+  // Spaces before punctuation
+  text = text.replace(/\s+([,.\!?;:])/g, '$1');
+
+  // Spaces inside quotation marks: “ word ” -> “word”
+  text = text.replace(/([“"‘])\s+/g, '$1');
+  text = text.replace(/\s+([”"’])/g, '$1');
+
+  // Collapse multiple consecutive spaces
+  text = text.replace(/[ \t]+/g, ' ');
+
+  return text.trim();
+}
+
+export const normalizeForNarration = normalizeNarrationText;
+
+

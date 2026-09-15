@@ -16,13 +16,15 @@ import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.Worker
 import androidx.work.WorkerParameters
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import okhttp3.Response
 import java.io.BufferedInputStream
 import java.io.BufferedOutputStream
 import java.io.File
 import java.io.FileOutputStream
-import java.net.HttpURLConnection
-import java.net.URL
 import java.net.URLEncoder
+import java.util.concurrent.TimeUnit
 
 internal class ModelDownloadWorker(context: Context, params: WorkerParameters) : Worker(context, params) {
   companion object {
@@ -47,6 +49,15 @@ internal class ModelDownloadWorker(context: Context, params: WorkerParameters) :
 
   private val store = ModelPackStore(applicationContext)
 
+  private val httpClient = OkHttpClient.Builder()
+    .connectTimeout(30, TimeUnit.SECONDS)
+    .readTimeout(60, TimeUnit.SECONDS)
+    .writeTimeout(60, TimeUnit.SECONDS)
+    .followRedirects(false)
+    .followSslRedirects(false)
+    .retryOnConnectionFailure(true)
+    .build()
+
   override fun doWork(): Result {
     applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
       .edit().putBoolean(PREF_PAUSED, false).apply()
@@ -54,7 +65,9 @@ internal class ModelDownloadWorker(context: Context, params: WorkerParameters) :
       store.recoverInterruptedInstall()
       if (store.isInstalled()) return Result.success(statusData("ready", ModelPackCatalog.totalBytes, "Natural voice is ready"))
       val downloadedBytes = store.downloadedBytes()
-      setForegroundAsync(foregroundInfo("checking", downloadedBytes, "Checking storage")).get()
+      try {
+        setForegroundAsync(foregroundInfo("checking", downloadedBytes, "Checking storage"))
+      } catch (_: Exception) {}
       setState("checking", downloadedBytes, "Checking storage")
       store.assertEnoughStorage()
       setState("downloading", store.downloadedBytes(), "Downloading natural voice")
@@ -77,7 +90,9 @@ internal class ModelDownloadWorker(context: Context, params: WorkerParameters) :
     } catch (_: InterruptedException) {
       Result.failure(statusData("paused", store.downloadedBytes(), "Download paused"))
     } catch (error: Exception) {
-      Result.failure(statusData("failed", store.downloadedBytes(), error.message ?: "The voice download could not be completed."))
+      val message = error.message ?: "The voice download could not be completed."
+      setState("failed", store.downloadedBytes(), message)
+      Result.failure(statusData("failed", store.downloadedBytes(), message))
     }
   }
 
@@ -90,28 +105,60 @@ internal class ModelDownloadWorker(context: Context, params: WorkerParameters) :
         return
       }
       destination.delete()
-    } else if (destination.length() > artifact.bytes) destination.delete()
+    } else if (destination.length() > artifact.bytes) {
+      destination.delete()
+    }
 
     var existingBytes = destination.length()
     val encodedPath = artifact.path.split('/').joinToString("/") {
       URLEncoder.encode(it, Charsets.UTF_8.name()).replace("+", "%20")
     }
-    val connection = URL("${ModelPackCatalog.SOURCE_ROOT}/$encodedPath?download=true").openConnection() as HttpURLConnection
-    connection.instanceFollowRedirects = true
-    connection.connectTimeout = 30_000
-    connection.readTimeout = 60_000
-    connection.setRequestProperty("User-Agent", "AIReader-Android/1.0")
-    if (existingBytes > 0) connection.setRequestProperty("Range", "bytes=$existingBytes-")
-    try {
-      connection.connect()
-      if (connection.responseCode !in 200..299) {
-        throw IllegalStateException("Voice download failed (${connection.responseCode}). Please retry.")
+    val initialUrl = "${ModelPackCatalog.SOURCE_ROOT}/$encodedPath?download=true"
+
+    var currentUrl = initialUrl
+    var response: Response? = null
+    var redirectCount = 0
+    val maxRedirects = 10
+
+    while (redirectCount < maxRedirects) {
+      if (isStopped) throw InterruptedException("Download paused")
+      val requestBuilder = Request.Builder()
+        .url(currentUrl)
+        .header("User-Agent", "AIReader-Android/1.0")
+      if (existingBytes > 0) {
+        requestBuilder.header("Range", "bytes=$existingBytes-")
       }
-      val append = existingBytes > 0 && connection.responseCode == HttpURLConnection.HTTP_PARTIAL
+      val res = httpClient.newCall(requestBuilder.build()).execute()
+      val code = res.code
+      if (code in 300..399) {
+        val location = res.header("Location")
+        val requestUrl = res.request.url
+        res.close()
+        if (location.isNullOrEmpty()) {
+          throw IllegalStateException("Redirect from $currentUrl missing Location header ($code)")
+        }
+        val resolved = requestUrl.resolve(location)
+          ?: throw IllegalStateException("Invalid redirect location '$location' from $currentUrl")
+        currentUrl = resolved.toString()
+        redirectCount++
+        continue
+      }
+      response = res
+      break
+    }
+
+    val finalResponse = response ?: throw IllegalStateException("Too many redirects downloading ${artifact.path}")
+    try {
+      if (!finalResponse.isSuccessful) {
+        throw IllegalStateException("Voice download failed (${finalResponse.code} ${finalResponse.message}). Please retry.")
+      }
+      val body = finalResponse.body ?: throw IllegalStateException("Empty response body for ${artifact.path}")
+      val append = existingBytes > 0 && finalResponse.code == 206
       if (!append) existingBytes = 0
-      BufferedInputStream(connection.inputStream, 1024 * 1024).use { input ->
-        BufferedOutputStream(FileOutputStream(destination, append), 1024 * 1024).use { output ->
-          val buffer = ByteArray(1024 * 1024)
+
+      BufferedInputStream(body.byteStream(), 64 * 1024).use { input ->
+        BufferedOutputStream(FileOutputStream(destination, append), 64 * 1024).use { output ->
+          val buffer = ByteArray(64 * 1024)
           var lastProgress = 0L
           while (true) {
             if (isStopped) throw InterruptedException("Download paused")
@@ -119,7 +166,8 @@ internal class ModelDownloadWorker(context: Context, params: WorkerParameters) :
             if (count < 0) break
             output.write(buffer, 0, count)
             val now = System.currentTimeMillis()
-            if (now - lastProgress >= 400L) {
+            if (now - lastProgress >= 300L) {
+              output.flush()
               emitDownloadProgress()
               lastProgress = now
             }
@@ -128,11 +176,12 @@ internal class ModelDownloadWorker(context: Context, params: WorkerParameters) :
         }
       }
     } finally {
-      connection.disconnect()
+      finalResponse.close()
     }
+
     if (destination.length() != artifact.bytes || store.sha256(destination) != artifact.sha256) {
       destination.delete()
-      throw IllegalStateException("A downloaded voice file was incomplete. Please retry.")
+      throw IllegalStateException("A downloaded voice file was incomplete or corrupted. Please retry.")
     }
     emitDownloadProgress()
   }
@@ -142,7 +191,9 @@ internal class ModelDownloadWorker(context: Context, params: WorkerParameters) :
   private fun setState(state: String, bytes: Long, message: String) {
     val data = statusData(state, bytes, message)
     setProgressAsync(data)
-    setForegroundAsync(foregroundInfo(state, bytes, message))
+    try {
+      setForegroundAsync(foregroundInfo(state, bytes, message))
+    } catch (_: Exception) {}
   }
 
   private fun statusData(state: String, bytes: Long, message: String): Data = Data.Builder()

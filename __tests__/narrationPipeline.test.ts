@@ -50,4 +50,87 @@ describe('narrationPipelineService', () => {
       isComplete: false,
     });
   });
+
+  describe('custom reference voice methods', () => {
+    it('throws or returns safe fallback when native is unavailable', async () => {
+      await expect(narrationPipelineService.pickReferenceAudio()).rejects.toThrow(
+        'Audio picker is not available on this platform.',
+      );
+      await expect(
+        narrationPipelineService.importCustomVoice('content://dummy', 'My Voice'),
+      ).rejects.toThrow('Custom voice import is not available.');
+      const deleted = await narrationPipelineService.deleteCustomVoice('non-existent');
+      expect(deleted).toBe(false);
+    });
+
+    it('delegates to NativeModules.NarrationEngine when available', async () => {
+      let isolatedPipeline: typeof import('../src/services/narrationPipeline');
+      const mockPickReferenceAudio = jest.fn().mockResolvedValue({
+        uri: 'content://audio/123',
+        name: 'sample.mp3',
+        size: 102400,
+      });
+      const mockImportCustomVoice = jest.fn().mockResolvedValue({
+        id: 'voice_123',
+        name: 'My Custom Voice',
+        descriptor: 'Cloned reference voice (4.5s)',
+        engine: 'natural',
+        isDefault: false,
+        isCustom: true,
+        sampleDurationSec: 4.5,
+      });
+      const mockDeleteCustomVoice = jest.fn().mockResolvedValue(true);
+
+      jest.isolateModules(() => {
+        const { NativeModules } = require('react-native');
+        NativeModules.NarrationEngine = {
+          addListener: jest.fn(),
+          removeListeners: jest.fn(),
+          pickReferenceAudio: mockPickReferenceAudio,
+          importCustomVoice: mockImportCustomVoice,
+          deleteCustomVoice: mockDeleteCustomVoice,
+          getCuratedVoices: jest.fn().mockResolvedValue({
+            voices: [
+              {
+                id: 'voice_123',
+                name: 'My Custom Voice',
+                descriptor: 'Cloned reference voice (4.5s)',
+                engine: 'natural',
+                isDefault: false,
+                isCustom: true,
+                sampleDurationSec: 4.5,
+              },
+            ],
+            expressions: [],
+          }),
+        };
+        isolatedPipeline = require('../src/services/narrationPipeline');
+      });
+
+      // Test pickReferenceAudio
+      const picked = await isolatedPipeline!.narrationPipelineService.pickReferenceAudio();
+      expect(mockPickReferenceAudio).toHaveBeenCalledTimes(1);
+      expect(picked).toEqual({
+        uri: 'content://audio/123',
+        name: 'sample.mp3',
+        size: 102400,
+      });
+
+      // Test importCustomVoice
+      const imported = await isolatedPipeline!.narrationPipelineService.importCustomVoice(
+        'content://audio/123',
+        'My Custom Voice',
+      );
+      expect(mockImportCustomVoice).toHaveBeenCalledWith('content://audio/123', 'My Custom Voice');
+      expect(imported.isCustom).toBe(true);
+      expect(imported.id).toBe('voice_123');
+      expect(imported.sampleDurationSec).toBe(4.5);
+
+      // Test deleteCustomVoice
+      const deleted = await isolatedPipeline!.narrationPipelineService.deleteCustomVoice('voice_123');
+      expect(mockDeleteCustomVoice).toHaveBeenCalledWith('voice_123');
+      expect(deleted).toBe(true);
+    });
+  });
 });
+

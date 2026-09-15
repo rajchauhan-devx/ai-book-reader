@@ -71,4 +71,28 @@ describe('normalizeNarrationText', () => {
       'He finished in first place on his second attempt.',
     );
   });
+
+  it('de-hyphenates line wraps, removes soft hyphens, and repairs ligature dropouts', () => {
+    expect(
+      normalizeNarrationText('The in-\nformation was con-\r\nfidential in the of fice.')
+    ).toBe('The information was confidential in the office.');
+
+    expect(
+      normalizeNarrationText('A dif\u00ADferent af fair was fil ed.')
+    ).toBe('A different affair was filled.');
+
+    expect(
+      normalizeNarrationText('A beau\u200Bti\uFEFFful fl ow of words.')
+    ).toBe('A beautiful flow of words.');
+  });
+
+  it('restores missing double-l words and contractions', () => {
+    expect(
+      normalizeNarrationText('He was going to cal Jason out. “We\'l arrive in 5 minutes!”')
+    ).toBe('He was going to call Jason out. “We\'ll arrive in five minutes!”');
+
+    expect(
+      normalizeNarrationText('They\'l stil be waiting by the smal wal.')
+    ).toBe('They\'ll still be waiting by the small wall.');
+  });
 });

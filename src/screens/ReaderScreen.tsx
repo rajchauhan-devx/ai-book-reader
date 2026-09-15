@@ -56,6 +56,7 @@ import { useNarrationPlayer } from '../state/NarrationPlayerProvider';
 import { narrationPlayerService } from '../services/narrationPlayer';
 import { opencodeMimoService } from '../services/opencodeMimoService';
 import { AppButton } from '../components/AppButton';
+import { fixLigatureSplits } from '../services/textNormalizer';
 import { useAppTheme } from '../theme/ThemeProvider';
 import { radius, spacing } from '../theme/tokens';
 import type { Book, BookChapter, ChapterPage } from '../types/library';
@@ -69,6 +70,16 @@ const HIGHLIGHT_COLORS: { key: HighlightColor; label: string; lightBg: string; d
   { key: 'blue', label: 'Blue', lightBg: '#BFDBFE', darkBg: '#1E3A8A' },
   { key: 'pink', label: 'Pink', lightBg: '#FBCFE8', darkBg: '#831843' },
 ];
+
+function cleanDisplayText(text: string): string {
+  if (!text) return '';
+  const cleaned = text
+    .replace(/[\u00AD\u200B\uFEFF]/g, '')
+    .replace(/([A-Za-z]+)[-\u2010]\s*[\r\n]+\s*([a-z]+)/g, '$1$2')
+    .replace(/[\r\n]+/g, ' ')
+    .replace(/\s+/g, ' ');
+  return fixLigatureSplits(cleaned);
+}
 
 export function ReaderScreen() {
   const { colors, isDark, preference, setPreference } = useAppTheme();
@@ -85,6 +96,69 @@ export function ReaderScreen() {
   const [currentChapterIndex, setCurrentChapterIndex] = useState(0);
   const [offset, setOffset] = useState(0);
   const [page, setPage] = useState<ChapterPage | null>(null);
+
+  const displayBlocks = useMemo(() => {
+    if (!page?.blocks || page.blocks.length === 0) return [];
+    const result: ChapterPage['blocks'][number][] = [];
+
+    function shouldMergeBlocks(
+      prev: ChapterPage['blocks'][number],
+      curr: ChapterPage['blocks'][number],
+    ): boolean {
+      if (prev.kind !== 'paragraph' || curr.kind !== 'paragraph') return false;
+      const p = prev.text.trim();
+      const c = curr.text.trim();
+      if (!p || !c) return false;
+
+      if (/[-—\u00AD]$/.test(p)) return true;
+
+      const firstChar = c[0];
+      if (firstChar >= 'a' && firstChar <= 'z') return true;
+      if (/^[,;:\]\)}»—]/.test(c)) return true;
+
+      const endsWithTerm = /[.!?”"’»]$/.test(p);
+      if (!endsWithTerm) {
+        if (!/^[“"‘']/.test(c)) {
+          const lastWord = (p.split(/\s+/).pop() || '').toLowerCase();
+          const danglingWords = new Set([
+            'and', 'or', 'but', 'a', 'an', 'the', 'of', 'to', 'in', 'on', 'at', 'with',
+            'for', 'from', 'as', 'by', 'were', 'was', 'is', 'are', 'had', 'have', 'has',
+            'would', 'could', 'should', 'been', 'that', 'which', 'who', 'whose', 'what',
+            'where', 'when', 'if', 'than', 'into', 'onto', 'upon', 'so', 'nor', 'yet',
+            'my', 'his', 'her', 'their', 'our', 'your', 'its', 'like', 'not', 'too',
+          ]);
+          if (danglingWords.has(lastWord) || /[,;:]$/.test(p)) return true;
+          if (/[a-zA-Z0-9]$/.test(p)) return true;
+        }
+      }
+      return false;
+    }
+
+    for (const block of page.blocks) {
+      if (result.length === 0) {
+        result.push(block);
+      } else {
+        const last = result[result.length - 1];
+        if (shouldMergeBlocks(last, block)) {
+          const separator = /[-—\u00AD]$/.test(last.text.trim()) ? '' : ' ';
+          const mergedText = `${last.text.trim()}${separator}${block.text.trim()}`;
+          const mergedSentences = [
+            ...(last.sentences || []),
+            ...(block.sentences || []),
+          ];
+          result[result.length - 1] = {
+            ...last,
+            text: mergedText,
+            sentences: mergedSentences,
+          };
+        } else {
+          result.push(block);
+        }
+      }
+    }
+    return result;
+  }, [page?.blocks]);
+
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [saveStatus, setSaveStatus] = useState<string>('');
@@ -203,7 +277,7 @@ export function ReaderScreen() {
       !page
     )
       return;
-    const blockIdx = page.blocks.findIndex(b =>
+    const blockIdx = displayBlocks.findIndex(b =>
       b.sentences?.some(s => s.index === playerState.sentenceIndex),
     );
     if (blockIdx >= 0 && listRef.current) {
@@ -1032,7 +1106,7 @@ export function ReaderScreen() {
       {/* Reader Content */}
       <FlatList<ChapterPage['blocks'][number]>
         ref={listRef}
-        data={page?.blocks ?? []}
+        data={displayBlocks}
         keyExtractor={item => item.id}
         contentContainerStyle={[
           styles.contentList,
@@ -1195,11 +1269,11 @@ export function ReaderScreen() {
                             hasNote && styles.notedSentence,
                           ]}
                         >
-                          {sentence.text}{' '}
+                          {cleanDisplayText(sentence.text).trim()}{' '}
                         </Text>
                       );
                     })
-                  : block.text}
+                  : cleanDisplayText(block.text)}
               </Text>
             </View>
           );
@@ -1318,7 +1392,7 @@ export function ReaderScreen() {
                 style={[styles.sheetExcerpt, { color: colors.ink }]}
                 numberOfLines={3}
               >
-                “{selectedSentence?.text}”
+                “{cleanDisplayText(selectedSentence?.text || '')}”
               </Text>
               <Pressable
                 accessibilityRole="button"
@@ -1530,7 +1604,7 @@ export function ReaderScreen() {
                 accessibilityLabel="Share passage"
                 onPress={() => {
                   if (selectedSentence) {
-                    Share.share({ message: selectedSentence.text });
+                    Share.share({ message: cleanDisplayText(selectedSentence.text) });
                   }
                 }}
                 style={[styles.sheetActionItem, { backgroundColor: colors.canvas }]}
@@ -1576,7 +1650,7 @@ export function ReaderScreen() {
               style={[styles.noteExcerptPreview, { color: colors.inkMuted }]}
               numberOfLines={2}
             >
-              “{selectedSentence?.text}”
+              “{cleanDisplayText(selectedSentence?.text || '')}”
             </Text>
 
             <TextInput

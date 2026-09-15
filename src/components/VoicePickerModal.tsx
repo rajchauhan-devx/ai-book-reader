@@ -1,5 +1,7 @@
 import React, {useCallback, useEffect, useState} from 'react';
 import {
+  ActivityIndicator,
+  Alert,
   Modal,
   Pressable,
   ScrollView,
@@ -15,8 +17,12 @@ import {
   Eye,
   EyeOff,
   Key,
+  Mic,
+  Music,
   Play,
+  Plus,
   Sparkles,
+  Trash2,
   Volume2,
   X,
   XCircle,
@@ -80,6 +86,18 @@ export function VoicePickerModal({
   } | null>(null);
 
   const [isModelRunning, setIsModelRunning] = useState(false);
+
+  // Custom Reference Voice (Chatterbox Voice Cloning) State
+  const [pickingAudio, setPickingAudio] = useState(false);
+  const [pendingAudio, setPendingAudio] = useState<{
+    uri: string;
+    name: string;
+    size: number;
+  } | null>(null);
+  const [customVoiceName, setCustomVoiceName] = useState('');
+  const [importingVoice, setImportingVoice] = useState(false);
+  const [showNameModal, setShowNameModal] = useState(false);
+  const [deletingVoiceId, setDeletingVoiceId] = useState<string | null>(null);
 
   useEffect(() => {
     let mounted = true;
@@ -146,6 +164,82 @@ export function VoicePickerModal({
     }
   };
 
+  const handlePickAudio = async () => {
+    try {
+      setPickingAudio(true);
+      const audio = await narrationPipelineService.pickReferenceAudio();
+      if (!audio) return;
+      setPendingAudio(audio);
+      const defaultName = audio.name
+        .replace(/\.[a-zA-Z0-9]+$/, '')
+        .replace(/[_-]+/g, ' ')
+        .replace(/\b\w/g, c => c.toUpperCase())
+        .trim();
+      setCustomVoiceName(defaultName || 'Custom Narrator');
+      setShowNameModal(true);
+    } catch (err: any) {
+      Alert.alert(
+        'Audio Selection Failed',
+        err.message || 'Could not select audio file.',
+      );
+    } finally {
+      setPickingAudio(false);
+    }
+  };
+
+  const handleConfirmImport = async () => {
+    if (!pendingAudio) return;
+    try {
+      setImportingVoice(true);
+      const profile = await narrationPipelineService.importCustomVoice(
+        pendingAudio.uri,
+        customVoiceName.trim() || 'Custom Narrator',
+      );
+      const catalog = await narrationPipelineService.getCuratedVoices();
+      setVoices(catalog.voices);
+      await handleSelectVoice(profile.id);
+      setShowNameModal(false);
+      setPendingAudio(null);
+      setCustomVoiceName('');
+    } catch (err: any) {
+      Alert.alert(
+        'Voice Cloning Failed',
+        err.message || 'Could not decode audio reference file.',
+      );
+    } finally {
+      setImportingVoice(false);
+    }
+  };
+
+  const handleDeleteCustomVoice = (voice: VoiceProfile) => {
+    Alert.alert(
+      'Delete Custom Voice',
+      `Are you sure you want to remove "${voice.name}"? This cannot be undone.`,
+      [
+        {text: 'Cancel', style: 'cancel'},
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              setDeletingVoiceId(voice.id);
+              await narrationPipelineService.deleteCustomVoice(voice.id);
+              const catalog = await narrationPipelineService.getCuratedVoices();
+              setVoices(catalog.voices);
+              if (selectedVoiceId === voice.id) {
+                await handleSelectVoice('warm');
+              }
+            } catch (err: any) {
+              Alert.alert('Delete Failed', err.message || 'Could not delete voice.');
+            } finally {
+              setDeletingVoiceId(null);
+            }
+          },
+        },
+      ],
+    );
+  };
+
   const handleSelectEngineMode = async (mode: NarrationEngineMode) => {
     setEngineMode(mode);
     const updated = await narrationPipelineService.savePreferences({
@@ -201,11 +295,12 @@ export function VoicePickerModal({
     voiceEngineStatus.state === 'playing';
 
   return (
-    <Modal
-      visible={visible}
-      transparent
-      animationType="slide"
-      onRequestClose={onClose}>
+    <>
+      <Modal
+        visible={visible}
+        transparent
+        animationType="slide"
+        onRequestClose={onClose}>
       <View style={styles.overlay}>
         <Pressable
           style={StyleSheet.absoluteFill}
@@ -552,12 +647,169 @@ export function VoicePickerModal({
                   </Text>
                 </View>
 
-                <Text style={[styles.sectionHeading, {color: colors.inkMuted}]}>
-                  CHATTERBOX CHARACTER VOICES
+                {/* CUSTOM REFERENCE VOICES (VOICE CLONING) */}
+                <View style={styles.sectionHeaderRow}>
+                  <Text
+                    style={[
+                      styles.sectionHeading,
+                      {color: colors.inkMuted, marginTop: 0, marginBottom: 0},
+                    ]}>
+                    CUSTOM REFERENCE VOICES (CLONED)
+                  </Text>
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel="Add custom voice"
+                    onPress={handlePickAudio}
+                    disabled={pickingAudio || importingVoice}
+                    style={[
+                      styles.addVoiceBtn,
+                      {backgroundColor: colors.brandSoft, borderColor: colors.brand},
+                      (pickingAudio || importingVoice) && {opacity: 0.5},
+                    ]}>
+                    <Plus size={14} color={colors.brand} />
+                    <Text style={[styles.addVoiceBtnText, {color: colors.brand}]}>
+                      {pickingAudio ? 'Opening...' : '+ Add MP3 Voice'}
+                    </Text>
+                  </Pressable>
+                </View>
+
+                {voices.filter(v => v.isCustom).length > 0 ? (
+                  <View style={styles.voiceList}>
+                    {voices
+                      .filter(v => v.isCustom)
+                      .map(voice => {
+                        const isSelected = voice.id === selectedVoiceId;
+                        const isDeleting = deletingVoiceId === voice.id;
+                        return (
+                          <Pressable
+                            key={voice.id}
+                            accessibilityRole="radio"
+                            accessibilityState={{selected: isSelected}}
+                            onPress={() => handleSelectVoice(voice.id)}
+                            style={[
+                              styles.voiceCard,
+                              {
+                                backgroundColor: colors.canvas,
+                                borderColor: isSelected
+                                  ? colors.brand
+                                  : colors.border,
+                              },
+                              isSelected && {backgroundColor: colors.brandSoft},
+                            ]}>
+                            <View style={styles.voiceCardHeader}>
+                              <View style={styles.voiceNameRow}>
+                                <Mic size={16} color="#8B5CF6" />
+                                <Text
+                                  style={[
+                                    styles.voiceName,
+                                    {color: colors.ink},
+                                    isSelected && styles.selectedVoiceName,
+                                  ]}>
+                                  {voice.name}
+                                </Text>
+                                <View
+                                  style={[
+                                    styles.voiceTagPill,
+                                    {
+                                      backgroundColor: isSelected
+                                        ? '#7C3AED'
+                                        : '#EDE9FE',
+                                    },
+                                  ]}>
+                                  <Text
+                                    style={[
+                                      styles.voiceTagText,
+                                      {
+                                        color: isSelected
+                                          ? colors.white
+                                          : '#6D28D9',
+                                      },
+                                    ]}>
+                                    CLONED · NATURAL
+                                  </Text>
+                                </View>
+                              </View>
+                              <View style={styles.customVoiceActions}>
+                                <Pressable
+                                  accessibilityRole="button"
+                                  accessibilityLabel={`Delete ${voice.name}`}
+                                  onPress={() => handleDeleteCustomVoice(voice)}
+                                  disabled={isDeleting}
+                                  hitSlop={8}
+                                  style={styles.deleteVoiceBtn}>
+                                  {isDeleting ? (
+                                    <ActivityIndicator size="small" color="#EF4444" />
+                                  ) : (
+                                    <Trash2 size={16} color="#EF4444" />
+                                  )}
+                                </Pressable>
+                                <View
+                                  style={[
+                                    styles.radioCircle,
+                                    {
+                                      borderColor: isSelected
+                                        ? colors.brand
+                                        : colors.border,
+                                    },
+                                    isSelected && {backgroundColor: colors.brand},
+                                  ]}>
+                                  {isSelected && <Check size={12} color="#FFF" />}
+                                </View>
+                              </View>
+                            </View>
+                            <Text
+                              style={[styles.voiceDesc, {color: colors.inkMuted}]}
+                              numberOfLines={2}>
+                              {voice.descriptor}
+                            </Text>
+                          </Pressable>
+                        );
+                      })}
+                  </View>
+                ) : (
+                  <View
+                    style={[
+                      styles.emptyCustomVoiceCard,
+                      {backgroundColor: colors.canvas, borderColor: colors.border},
+                    ]}>
+                    <View style={styles.emptyCustomIconWrap}>
+                      <Mic size={22} color="#8B5CF6" />
+                    </View>
+                    <View style={styles.emptyCustomTextWrap}>
+                      <Text style={[styles.emptyCustomTitle, {color: colors.ink}]}>
+                        Clone Any Human Voice
+                      </Text>
+                      <Text style={[styles.emptyCustomDesc, {color: colors.inkMuted}]}>
+                        Upload a 5–12s MP3 or audio clip of any speaker. Chatterbox learns their vocal timbre and pitch for human-like narration.
+                      </Text>
+                    </View>
+                    <Pressable
+                      accessibilityRole="button"
+                      onPress={handlePickAudio}
+                      disabled={pickingAudio || importingVoice}
+                      style={[styles.emptyAddBtn, {backgroundColor: colors.brand}]}>
+                      <Plus size={16} color="#FFF" />
+                      <Text style={styles.emptyAddBtnText}>
+                        {pickingAudio ? 'Selecting...' : 'Upload Reference MP3'}
+                      </Text>
+                    </Pressable>
+                  </View>
+                )}
+
+                <Text
+                  style={[
+                    styles.sectionHeading,
+                    {color: colors.inkMuted, marginTop: spacing.md},
+                  ]}>
+                  BUILT-IN CHARACTER VOICES
                 </Text>
                 <View style={styles.voiceList}>
                   {voices
-                    .filter(v => v.engine === 'natural' || v.engine === 'system')
+                    .filter(
+                      v =>
+                        (v.engine === 'natural' || v.engine === 'system') &&
+                        !v.isCustom,
+                    )
                     .map(voice => {
                       const isSelected = voice.id === selectedVoiceId;
                       const roleTag =
@@ -699,7 +951,122 @@ export function VoicePickerModal({
           </View>
         </View>
       </View>
-    </Modal>
+      </Modal>
+
+      {/* Name & Confirm Reference Audio Modal */}
+      <Modal
+        visible={showNameModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => {
+          if (!importingVoice) {
+            setShowNameModal(false);
+            setPendingAudio(null);
+          }
+        }}>
+        <View style={styles.nameModalOverlay}>
+          <View
+            style={[
+              styles.nameModalCard,
+              {backgroundColor: colors.surface, borderColor: colors.border},
+            ]}>
+            <View style={styles.nameModalHeader}>
+              <View style={styles.nameModalTitleRow}>
+                <Mic size={20} color="#8B5CF6" />
+                <Text style={[styles.nameModalTitle, {color: colors.ink}]}>
+                  Train Reference Voice
+                </Text>
+              </View>
+              {!importingVoice && (
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="Close"
+                  onPress={() => {
+                    setShowNameModal(false);
+                    setPendingAudio(null);
+                  }}
+                  hitSlop={8}>
+                  <X size={20} color={colors.inkMuted} />
+                </Pressable>
+              )}
+            </View>
+
+            {pendingAudio && (
+              <View
+                style={[
+                  styles.audioFileBadge,
+                  {backgroundColor: colors.canvas, borderColor: colors.border},
+                ]}>
+                <Music size={16} color={colors.brand} />
+                <Text
+                  style={[styles.audioFileName, {color: colors.ink}]}
+                  numberOfLines={1}>
+                  {pendingAudio.name}
+                </Text>
+              </View>
+            )}
+
+            <Text style={[styles.nameModalPrompt, {color: colors.inkMuted}]}>
+              Enter a name for this custom narrator voice:
+            </Text>
+
+            <TextInput
+              style={[
+                styles.voiceNameInput,
+                {
+                  backgroundColor: colors.canvas,
+                  color: colors.ink,
+                  borderColor: colors.border,
+                },
+              ]}
+              value={customVoiceName}
+              onChangeText={setCustomVoiceName}
+              placeholder="e.g. My Favorite Narrator"
+              placeholderTextColor={colors.inkMuted}
+              autoFocus
+              editable={!importingVoice}
+            />
+
+            <Text style={[styles.nameModalHelp, {color: colors.inkMuted}]}>
+              Chatterbox will decode the audio to 24kHz mono PCM and analyze vocal timbre, pitch, and cadence.
+            </Text>
+
+            <View style={styles.nameModalActions}>
+              <Pressable
+                accessibilityRole="button"
+                onPress={() => {
+                  setShowNameModal(false);
+                  setPendingAudio(null);
+                }}
+                disabled={importingVoice}
+                style={[styles.nameModalCancelBtn, {borderColor: colors.border}]}>
+                <Text
+                  style={[styles.nameModalCancelText, {color: colors.inkMuted}]}>
+                  Cancel
+                </Text>
+              </Pressable>
+              <Pressable
+                accessibilityRole="button"
+                onPress={handleConfirmImport}
+                disabled={importingVoice || !customVoiceName.trim()}
+                style={[
+                  styles.nameModalConfirmBtn,
+                  {backgroundColor: colors.brand},
+                  (importingVoice || !customVoiceName.trim()) && {opacity: 0.5},
+                ]}>
+                {importingVoice ? (
+                  <ActivityIndicator size="small" color="#FFF" />
+                ) : (
+                  <Text style={styles.nameModalConfirmText}>
+                    Train & Add Voice
+                  </Text>
+                )}
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
+    </>
   );
 }
 
@@ -978,5 +1345,184 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '600',
     flex: 1,
+  },
+  sectionHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: spacing.md,
+    marginBottom: spacing.sm,
+  },
+  addVoiceBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 5,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+  },
+  addVoiceBtnText: {
+    ...typography.small,
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  customVoiceActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  deleteVoiceBtn: {
+    padding: 4,
+  },
+  emptyCustomVoiceCard: {
+    borderRadius: radius.md,
+    borderWidth: 1,
+    padding: spacing.md,
+    alignItems: 'center',
+    marginBottom: spacing.sm,
+    gap: spacing.xs,
+  },
+  emptyCustomIconWrap: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#EDE9FE',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 4,
+  },
+  emptyCustomTextWrap: {
+    alignItems: 'center',
+    marginBottom: spacing.xs,
+  },
+  emptyCustomTitle: {
+    ...typography.body,
+    fontWeight: '700',
+    fontSize: 14,
+    marginBottom: 2,
+  },
+  emptyCustomDesc: {
+    ...typography.small,
+    fontSize: 12,
+    textAlign: 'center',
+    lineHeight: 16,
+    paddingHorizontal: spacing.sm,
+  },
+  emptyAddBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 8,
+    borderRadius: radius.pill,
+    marginTop: 4,
+  },
+  emptyAddBtnText: {
+    color: '#FFFFFF',
+    ...typography.small,
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  nameModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: spacing.lg,
+  },
+  nameModalCard: {
+    width: '100%',
+    maxWidth: 400,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    padding: spacing.lg,
+    elevation: 8,
+    shadowColor: '#000',
+    shadowOffset: {width: 0, height: 4},
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+  },
+  nameModalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: spacing.sm,
+  },
+  nameModalTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+  },
+  nameModalTitle: {
+    ...typography.sectionTitle,
+    fontSize: 18,
+  },
+  audioFileBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 6,
+    borderRadius: radius.sm,
+    borderWidth: 1,
+    marginBottom: spacing.sm,
+  },
+  audioFileName: {
+    ...typography.small,
+    fontSize: 12,
+    fontWeight: '600',
+    flex: 1,
+  },
+  nameModalPrompt: {
+    ...typography.small,
+    fontSize: 13,
+    marginBottom: spacing.xs,
+  },
+  voiceNameInput: {
+    height: 44,
+    borderRadius: radius.sm,
+    borderWidth: 1,
+    paddingHorizontal: spacing.md,
+    fontSize: 14,
+    marginBottom: spacing.xs,
+  },
+  nameModalHelp: {
+    ...typography.small,
+    fontSize: 11,
+    lineHeight: 15,
+    marginBottom: spacing.md,
+  },
+  nameModalActions: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    gap: spacing.sm,
+  },
+  nameModalCancelBtn: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: 10,
+    borderRadius: radius.sm,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  nameModalCancelText: {
+    ...typography.small,
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  nameModalConfirmBtn: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: 10,
+    borderRadius: radius.sm,
+    alignItems: 'center',
+    justifyContent: 'center',
+    minWidth: 130,
+  },
+  nameModalConfirmText: {
+    color: '#FFFFFF',
+    ...typography.small,
+    fontSize: 13,
+    fontWeight: '700',
   },
 });
