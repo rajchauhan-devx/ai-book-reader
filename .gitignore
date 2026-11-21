@@ -63,8 +63,23 @@ yarn-error.log
 # Temporary files created by Metro to check the health of the file watcher
 .metro-health-check*
 
-# testing
+# Testing
 /coverage
+
+# Large models, audio, and device screen dumps
+*.onnx
+*.bin
+*.wav
+*.mp3
+*.m4a
+*.epub
+*.pdf
+screen_*.png
+emulator_screen.png
+ui_*.png
+*.xml.dump
+reader_view.xml
+us_gold.json
 
 # Yarn
 .yarn/*

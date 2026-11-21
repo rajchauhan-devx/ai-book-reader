@@ -35,17 +35,17 @@ export function BookCard({
       onPress={onPress}
       onLongPress={onLongPress}
       accessibilityState={{ selected: !!selected }}
-      style={({ pressed }) => [{ width, opacity: pressed ? 0.78 : 1 }]}
+      style={({ pressed }) => [{ width, opacity: pressed ? 0.85 : 1 }]}
     >
       <BookCover book={book} width={width} height={coverHeight} />
       {selecting ? (
-        <Text style={{ color: colors.brand }}>
+        <Text style={[styles.selectingTag, { color: colors.brand }]}>
           {selected ? '☑ Selected' : '☐ Select book'}
         </Text>
       ) : null}
       <View style={styles.titleRow}>
         <View style={styles.titleCopy}>
-          <Text style={[styles.title, { color: colors.ink }]} numberOfLines={1}>
+          <Text style={[styles.title, { color: colors.ink }]} numberOfLines={2}>
             {book.title}
           </Text>
           <Text
@@ -65,40 +65,38 @@ export function BookCard({
             }}
             style={styles.menu}
           >
-            <MoreHorizontal size={20} color={colors.inkMuted} />
+            <MoreHorizontal size={18} color={colors.inkMuted} />
           </Pressable>
         ) : null}
       </View>
-      <View style={[styles.track, { backgroundColor: colors.surfaceMuted }]}>
-        <View
-          style={[
-            styles.progress,
-            { backgroundColor: colors.listen, width: `${book.progress}%` },
-          ]}
-        />
-      </View>
-      <View style={styles.metaRow}>
-        {book.genre && book.genre !== 'Uncategorized' ? (
+
+      {book.progress > 0 ? (
+        <View style={[styles.track, { backgroundColor: colors.surfaceMuted }]}>
           <View
             style={[
-              styles.genreBadge,
-              { backgroundColor: colors.surfaceMuted, borderColor: colors.border },
+              styles.progress,
+              { backgroundColor: colors.listen, width: `${book.progress}%` },
             ]}
-          >
-            <Text
-              style={[styles.genreText, { color: colors.inkMuted }]}
-              numberOfLines={1}
-            >
-              {book.genre}
-            </Text>
-          </View>
-        ) : null}
+          />
+        </View>
+      ) : null}
+
+      <View style={styles.metaRow}>
+        <View
+          style={[
+            styles.formatBadge,
+            { backgroundColor: colors.surfaceMuted, borderColor: colors.border },
+          ]}
+        >
+          <Text style={[styles.formatText, { color: colors.inkMuted }]}>
+            {(book.format ?? 'epub').toUpperCase()}
+          </Text>
+        </View>
         <Text
           style={[styles.meta, { color: colors.inkMuted }]}
           numberOfLines={1}
         >
-          {book.isSample ? 'Sample · ' : ''}
-          {book.remaining}
+          {book.progress > 0 ? `${book.progress}%` : 'New'}
         </Text>
       </View>
     </Pressable>
@@ -107,10 +105,16 @@ export function BookCard({
 
 const styles = StyleSheet.create({
   menu: {
-    minWidth: 44,
-    minHeight: 44,
+    width: 32,
+    height: 32,
     alignItems: 'center',
     justifyContent: 'center',
+    marginTop: -4,
+  },
+  selectingTag: {
+    marginTop: spacing.xs,
+    fontSize: 13,
+    fontWeight: '600',
   },
   titleRow: {
     marginTop: spacing.sm,
@@ -118,28 +122,34 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
     gap: spacing.xs,
   },
-  titleCopy: { flex: 1, gap: 1 },
-  title: { ...typography.label, fontSize: 15 },
-  author: typography.small,
-  track: { height: 4, borderRadius: radius.pill, marginTop: spacing.sm },
-  progress: { height: 4, borderRadius: radius.pill },
+  titleCopy: { flex: 1, gap: 2 },
+  title: {
+    fontSize: 14,
+    lineHeight: 18,
+    fontWeight: '700',
+  },
+  author: {
+    fontSize: 12,
+    lineHeight: 16,
+  },
+  track: { height: 3, borderRadius: radius.pill, marginTop: spacing.xs },
+  progress: { height: 3, borderRadius: radius.pill },
   metaRow: {
-    marginTop: 5,
+    marginTop: 6,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    flexWrap: 'wrap',
   },
-  genreBadge: {
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: radius.pill,
-    borderWidth: 1,
+  formatBadge: {
+    paddingHorizontal: 5,
+    paddingVertical: 1,
+    borderRadius: 4,
+    borderWidth: 0.5,
   },
-  genreText: {
-    fontSize: 10,
+  formatText: {
+    fontSize: 9,
     fontWeight: '700',
-    letterSpacing: 0.3,
+    letterSpacing: 0.4,
   },
-  meta: { ...typography.small, fontSize: 12 },
+  meta: { fontSize: 11, fontWeight: '500' },
 });

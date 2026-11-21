@@ -34,13 +34,11 @@ import {
 } from '../services/libraryView';
 
 const filters: { value: LibraryFilter; label: string }[] = [
-  { value: 'all', label: 'All books' },
-  { value: 'ready', label: 'Text ready' },
+  { value: 'all', label: 'All' },
   { value: 'reading', label: 'Reading' },
+  { value: 'ready', label: 'Audio Ready' },
   { value: 'finished', label: 'Finished' },
   { value: 'unread', label: 'Unread' },
-  { value: 'preparing', label: 'Preparing' },
-  { value: 'attention', label: 'Needs attention' },
 ];
 
 export function LibraryScreen() {
@@ -237,23 +235,7 @@ export function LibraryScreen() {
               />
             </View>
 
-            {/* Genre Filter Pills */}
-            {distinctGenres.length > 0 ? (
-              <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                contentContainerStyle={styles.chips}
-              >
-                {chip('All genres', selectedGenre === 'all', () =>
-                  setSelectedGenre('all'),
-                )}
-                {distinctGenres.map(g =>
-                  chip(g, selectedGenre === g, () => setSelectedGenre(g)),
-                )}
-              </ScrollView>
-            ) : null}
-
-            {/* Status Filters */}
+            {/* Unified Status Filters */}
             <ScrollView
               horizontal
               showsHorizontalScrollIndicator={false}
@@ -264,39 +246,36 @@ export function LibraryScreen() {
                   setFilter(item.value),
                 ),
               )}
-            </ScrollView>
-
-            {/* Format Filters */}
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.chips}
-            >
-              {(['all', 'epub', 'pdf', 'txt'] as const).map(value =>
+              {(['epub', 'pdf', 'txt'] as const).map(value =>
                 chip(
-                  value === 'all' ? 'All formats' : value.toUpperCase(),
+                  value.toUpperCase(),
                   format === value,
-                  () => setFormat(value),
+                  () => setFormat(format === value ? 'all' : value),
                 ),
               )}
             </ScrollView>
 
             {/* Sort & Select Tools */}
             <View style={styles.tools}>
-              <AppButton
-                label={sorts.find(item => item.value === sort)!.label}
-                variant="ghost"
-                onPress={() => setSortOpen(true)}
-              />
-              <AppButton
-                label={selecting ? 'Done selecting' : 'Select'}
-                variant="ghost"
-                disabled={removing || books.length === 0}
-                onPress={() => {
-                  setSelecting(!selecting);
-                  setSelected(new Set());
-                }}
-              />
+              <Text style={[styles.bookCount, { color: colors.inkMuted }]}>
+                {visible.length} {visible.length === 1 ? 'book' : 'books'}
+              </Text>
+              <View style={styles.toolActions}>
+                <AppButton
+                  label={sorts.find(item => item.value === sort)!.label}
+                  variant="ghost"
+                  onPress={() => setSortOpen(true)}
+                />
+                <AppButton
+                  label={selecting ? 'Done selecting' : 'Select'}
+                  variant="ghost"
+                  disabled={removing || books.length === 0}
+                  onPress={() => {
+                    setSelecting(!selecting);
+                    setSelected(new Set());
+                  }}
+                />
+              </View>
             </View>
 
             {selecting ? (
@@ -308,10 +287,6 @@ export function LibraryScreen() {
                 onPress={() => confirmRemove(selectedIds)}
               />
             ) : null}
-
-            <Text style={[styles.small, { color: colors.inkMuted }]}>
-              {visible.length} shown · {books.length} in library
-            </Text>
 
             {error ? (
               <>
@@ -428,7 +403,18 @@ const styles = StyleSheet.create({
   tools: {
     flexDirection: 'row',
     justifyContent: 'space-between',
+    alignItems: 'center',
     flexWrap: 'wrap',
+    marginTop: 2,
+  },
+  bookCount: {
+    ...typography.label,
+    fontSize: 13,
+  },
+  toolActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
   },
   empty: { gap: spacing.sm, paddingVertical: 32, alignItems: 'center' },
 });

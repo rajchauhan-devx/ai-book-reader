@@ -56,7 +56,7 @@ jest.mock('../src/services/modelDownload', () => ({
 jest.mock('../src/services/narrationEngine', () => ({
   narrationEngineService: {
     getStatus: jest.fn().mockResolvedValue({
-      engine: 'chatterbox-nano',
+      engine: 'kokoro',
       performanceMode: 'balanced',
       running: false,
       state: 'ready',
@@ -197,7 +197,7 @@ describe('storageBackupService', () => {
         // Verify technical metrics exist
         expect(data.totalBooksImported).toBeDefined();
         expect(data.totalAnnotationsStored).toBeDefined();
-        expect(data.activeNarrationEngine).toBe('chatterbox-nano');
+        expect(data.activeNarrationEngine).toBe('kokoro');
         expect(data.ttsPerformanceMode).toBe('balanced');
         return Promise.resolve('content://diagnostics.txt');
       });

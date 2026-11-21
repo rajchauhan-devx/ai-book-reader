@@ -1,6 +1,6 @@
 # AI Book Reader Mobile
 
-A private, local-first Android book reader built with React Native and TypeScript. Phase 1 provides the navigable product shell and design system. Phase 2 adds the direct, resumable natural-voice download and real on-device Chatterbox Nano inference.
+A private, local-first Android book reader built with React Native and TypeScript. Phase 1 provides the navigable product shell and design system. Phase 2 adds the direct, resumable natural-voice download and real on-device Kokoro-82M inference.
 
 Phase 3 now implements EPUB/PDF/TXT preparation, automatic durable jobs, real chapter/page preview, saved page locations, metadata/cover editing, sorting/filtering and multi-select removal. Books stay in private Room/file storage. Design samples are opt-in. Full Reader tools/notes and imported-book narration remain later phases; prepared text is not prepared audio.
 
@@ -13,8 +13,7 @@ Phase 3 now implements EPUB/PDF/TXT preparation, automatic durable jobs, real ch
 - To try it: Import book → Choose file → Open imported book → Preview prepared text. Preparation starts automatically. Chapter and 24-block page positions are saved; exact-sentence Reader resume comes in Phase 4.
 - Limits: source copy 250 MiB; UTF-8 TXT preparation 16 MiB; text PDF preparation 64 MiB / 1,000 pages; shared extracted text 4 million UTF-16 units. EPUB expansion and markup are bounded. Scanned PDFs need OCR (not included); protected files are rejected; PDF reading order carries a layout warning.
 - Direct in-app download: resumable, SHA-256 verified, atomically installed, and kept in app-private storage.
-- Natural voice: four-stage Chatterbox Nano ONNX pipeline with local WAV generation and playback.
-- Safety fallback: offline Android phone voice.
+- Natural voice: lightweight, high-fidelity Kokoro-82M ONNX pipeline running purely offline on-device with zero cloud APIs.
 - Voice controls: Battery, Balanced, and Quality modes; cancellation; cleanup; model removal.
 - Persistent first launch and theme preferences: complete.
 - Typed boundaries for library, model, import, and narration services: complete.

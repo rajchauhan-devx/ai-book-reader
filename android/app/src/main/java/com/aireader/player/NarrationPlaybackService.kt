@@ -23,16 +23,13 @@ import android.support.v4.media.session.MediaSessionCompat
 import android.support.v4.media.session.PlaybackStateCompat
 import androidx.core.app.NotificationCompat
 import androidx.media.app.NotificationCompat.MediaStyle
-import com.aireader.ChatterboxOnnxEngine
+import com.aireader.KokoroOnnxEngine
 import com.aireader.MainActivity
 import com.aireader.ModelPackCatalog
 import com.aireader.ModelPackStore
-import com.aireader.PerformanceMode
-import com.aireader.SystemTtsEngine
 import com.aireader.WavAudio
 import com.aireader.library.LibraryDatabase
 import com.aireader.narration.AudioCacheStore
-import com.aireader.narration.EdgeTtsEngine
 import com.aireader.narration.TextNormalizer
 import com.aireader.narration.VoiceCatalog
 import android.util.Log
@@ -58,8 +55,8 @@ data class PlaybackSnapshot(
   val pagePreparationReady: Int = 0,
   val pagePreparationTotal: Int = 0,
   val errorMessage: String? = null,
-  val engineMode: String = "edge-cloud",
-  val voiceId: String = "warm",
+  val engineMode: String = "kokoro",
+  val voiceId: String = "af_heart",
   val isModelLoaded: Boolean = false,
 )
 
@@ -100,13 +97,9 @@ class NarrationPlaybackService : Service() {
     const val EXTRA_MINUTES = "minutes"
     const val EXTRA_END_OF_CHAPTER = "endOfChapter"
     const val EXTRA_ENGINE_MODE = "engineMode"
-    const val EXTRA_EDGE_VOICE = "edgeVoice"
 
     @Volatile
-    var activeEngineMode: String = "edge-cloud"
-
-    @Volatile
-    var activeEdgeVoice: String = "en-US-JennyNeural"
+    var activeEngineMode: String = "kokoro"
 
     @Volatile
     var lastErrorMessage: String? = null
@@ -115,7 +108,7 @@ class NarrationPlaybackService : Service() {
     var isServiceActive: Boolean = false
 
     @Volatile
-    internal var onnxEngineInstance: ChatterboxOnnxEngine? = null
+    internal var onnxEngineInstance: KokoroOnnxEngine? = null
 
     val isModelLoaded: Boolean
       get() = onnxEngineInstance != null
@@ -145,8 +138,8 @@ class NarrationPlaybackService : Service() {
       pagePreparationReady = 0,
       pagePreparationTotal = 0,
       errorMessage = null,
-      engineMode = "edge-cloud",
-      voiceId = "warm",
+      engineMode = "kokoro",
+      voiceId = "af_heart",
       isModelLoaded = false,
     )
       private set
@@ -162,14 +155,13 @@ class NarrationPlaybackService : Service() {
   private lateinit var mediaSession: MediaSessionCompat
   private lateinit var cacheStore: AudioCacheStore
   private lateinit var modelStore: ModelPackStore
-  private lateinit var systemTts: SystemTtsEngine
 
   // Dual MediaPlayer pool for gapless hardware hand-off
   private var activePlayer: MediaPlayer? = null
   private var nextPlayer: MediaPlayer? = null
   private var nextPreparedSentenceIndex = -1
 
-  private var onnxEngine: ChatterboxOnnxEngine? = null
+  private var onnxEngine: KokoroOnnxEngine? = null
 
   // In-memory sentences cache for active chapter
   private var cachedChapterId: String? = null
@@ -183,7 +175,7 @@ class NarrationPlaybackService : Service() {
   private var currentChapterTitle: String? = null
   private var currentSentenceIndex = 0
   private var totalSentencesInChapter = 0
-  private var currentVoiceId = "warm"
+  private var currentVoiceId = "af_heart"
   private var currentExpression = "natural"
   private var currentSpeed = 1.0f
   private var currentState = "idle" // idle, playing, paused, buffering, ended
@@ -192,8 +184,7 @@ class NarrationPlaybackService : Service() {
   private var currentPageEndIndex = -1
   private var pagePreparationReady = 0
   private var pagePreparationTotal = 0
-  private var currentEngineMode = activeEngineMode
-  private var currentEdgeVoice = activeEdgeVoice
+  private var currentEngineMode = "kokoro"
 
   // Sleep timer state
   private var sleepTimerEndTimeMs = 0L
@@ -232,7 +223,6 @@ class NarrationPlaybackService : Service() {
     audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
     cacheStore = AudioCacheStore(applicationContext)
     modelStore = ModelPackStore(applicationContext)
-    systemTts = SystemTtsEngine(applicationContext)
 
     createNotificationChannel()
     setupMediaSession()
@@ -245,27 +235,11 @@ class NarrationPlaybackService : Service() {
 
     when (intent.action) {
       ACTION_SET_ENGINE_CONFIG -> {
-        val oldMode = currentEngineMode
-        val oldEdgeV = currentEdgeVoice
-        intent.getStringExtra(EXTRA_ENGINE_MODE)?.let {
-          currentEngineMode = it
-          activeEngineMode = it
+        val oldVoice = currentVoiceId
+        intent.getStringExtra(EXTRA_VOICE_ID)?.let {
+          currentVoiceId = it
         }
-        val edgeV = intent.getStringExtra(EXTRA_EDGE_VOICE) ?: intent.getStringExtra("geminiVoice")
-        edgeV?.let {
-          currentEdgeVoice = it
-          activeEdgeVoice = it
-        }
-        if (oldMode == "chatterbox-local" && currentEngineMode != "chatterbox-local") {
-          try {
-            onnxEngine?.close()
-          } catch (_: Exception) {}
-          onnxEngine = null
-          onnxEngineInstance = null
-          updateSnapshot()
-        }
-        if ((oldMode != currentEngineMode || oldEdgeV != currentEdgeVoice) &&
-            currentBookId != null && currentChapterId != null) {
+        if (oldVoice != currentVoiceId && currentBookId != null && currentChapterId != null) {
           prebufferGeneration.incrementAndGet()
           releasePlayers()
           if (currentState == "playing" || currentState == "buffering") {
@@ -282,12 +256,7 @@ class NarrationPlaybackService : Service() {
         val expr = intent.getStringExtra(EXTRA_EXPRESSION) ?: currentExpression
         val spd = intent.getFloatExtra(EXTRA_SPEED, currentSpeed)
         val pSize = intent.getIntExtra(EXTRA_PAGE_SIZE, DEFAULT_PAGE_SIZE)
-        currentEngineMode = intent.getStringExtra(EXTRA_ENGINE_MODE) ?: activeEngineMode
-        val playEdgeV = intent.getStringExtra(EXTRA_EDGE_VOICE) ?: intent.getStringExtra("geminiVoice")
-        if (!playEdgeV.isNullOrBlank()) {
-          currentEdgeVoice = playEdgeV
-          activeEdgeVoice = playEdgeV
-        }
+        currentEngineMode = "kokoro"
         startPlayback(bId, cId, sIdx, vId, expr, spd, pSize)
       }
       ACTION_PAUSE -> pausePlayback()
@@ -325,7 +294,6 @@ class NarrationPlaybackService : Service() {
     prebufferGeneration.incrementAndGet()
     prebufferExecutor.shutdownNow()
     executor.shutdownNow()
-    systemTts.shutdown()
     mainHandler.removeCallbacks(tickerRunnable)
     unregisterNoisyReceiver()
     abandonAudioFocus()
@@ -431,9 +399,7 @@ class NarrationPlaybackService : Service() {
   }
 
   private fun effectiveVoiceId(voiceId: String = currentVoiceId): String {
-    val selectedVoice = VoiceCatalog.findVoice(voiceId)
-    val isEdgeMode = currentEngineMode == "edge-cloud" || selectedVoice.engine == "edge"
-    return if (isEdgeMode) "edge-$currentEdgeVoice" else selectedVoice.id
+    return VoiceCatalog.findVoice(voiceId).id
   }
 
   private fun prepareAndPlayPage(pageStart: Int, pageEnd: Int, playFromIndex: Int) {
@@ -894,15 +860,12 @@ class NarrationPlaybackService : Service() {
     val effectiveExpression = dynamicEmotion ?: expression
 
     val selectedVoice = VoiceCatalog.findVoice(voiceId)
-    val selectedExpr = VoiceCatalog.findExpression(effectiveExpression)
-
-    val isEdgeMode = currentEngineMode == "edge-cloud" || selectedVoice.engine == "edge"
-    val effectiveVoiceId = if (isEdgeMode) "edge-$currentEdgeVoice" else selectedVoice.id
+    val effectiveVoiceId = selectedVoice.id
 
     val cacheKey = cacheStore.computeCacheKey(
       normalizedText = normalized,
-      modelPackId = if (isEdgeMode) "edge-neural" else "chatterbox-nano",
-      modelVersion = if (isEdgeMode) currentEdgeVoice else ModelPackCatalog.PACK_VERSION,
+      modelPackId = "kokoro-82m",
+      modelVersion = ModelPackCatalog.PACK_VERSION,
       voiceId = effectiveVoiceId,
       expression = effectiveExpression,
     )
@@ -913,69 +876,37 @@ class NarrationPlaybackService : Service() {
 
     if (isCancelled()) return null
 
-    // Mode 1: Microsoft Edge Neural Cloud AI
-    if (isEdgeMode) {
-      val res = EdgeTtsEngine.synthesize(
-        text = normalized,
-        voiceName = currentEdgeVoice,
-        targetFile = targetFile,
-        emotionStyle = effectiveExpression,
-      )
-      if (res.isSuccess && cacheStore.isValidWav(targetFile)) {
-        lastErrorMessage = null
-        return targetFile
-      }
-      val err = res.exceptionOrNull()?.message ?: "Edge TTS synthesis failed"
-      lastErrorMessage = "Microsoft Edge Neural error: $err"
-      Log.e("NarrationPlaybackService", "Edge TTS failed: $lastErrorMessage")
-      return null
-    }
-
-    // Mode 2: Chatterbox Local On-Device AI
+    // Kokoro Offline On-Device AI
     if (!modelStore.isInstalled()) {
-      lastErrorMessage = "Chatterbox neural model pack is not installed. Download it in Model Setup."
+      lastErrorMessage = "Kokoro voice model is not installed. Download it in Model Setup."
       return null
     }
 
     try {
-      var refFile = File(applicationContext.filesDir, selectedVoice.referenceAsset ?: "voice/neutral-reference.wav")
-      if (!refFile.exists() || refFile.length() < 44) {
-        val fallbackRef = File(applicationContext.filesDir, "voice/neutral-reference.wav")
-        if (fallbackRef.exists() && fallbackRef.length() >= 44) {
-          refFile = fallbackRef
-        } else {
-          try {
-            systemTts.synthesizeReference(refFile)
-          } catch (_: Exception) {}
-          if (!refFile.exists() || refFile.length() < 44) {
-            if (fallbackRef.exists()) refFile = fallbackRef
-          }
-        }
-      }
-      val reference = WavAudio.readMono(refFile)
-      val naturalEngine = onnxEngine ?: ChatterboxOnnxEngine(modelStore).also {
+      val kokoroEngine = onnxEngine ?: KokoroOnnxEngine(modelStore).also {
         onnxEngine = it
         onnxEngineInstance = it
         mainHandler.post { updateSnapshot() }
       }
-      val generated = naturalEngine.generate(
+      val generated = kokoroEngine.generate(
         text = normalized,
-        reference = reference,
-        performanceMode = PerformanceMode.BALANCED,
+        voiceId = effectiveVoiceId,
+        speed = currentSpeed,
         isCancelled = isCancelled,
         onProgress = { _, _ -> },
       )
       if (isCancelled()) return null
       WavAudio.writeMonoPcm16(targetFile, generated.samples)
       if (cacheStore.isValidWav(targetFile)) {
+        lastErrorMessage = null
         return targetFile
       } else {
-        lastErrorMessage = "Chatterbox generation produced invalid audio."
+        lastErrorMessage = "Kokoro generation produced invalid audio."
         return null
       }
     } catch (e: Exception) {
-      Log.e("NarrationPlaybackService", "Chatterbox generation failed: ${e.message}", e)
-      lastErrorMessage = "Chatterbox engine error: ${e.message}"
+      Log.e("NarrationPlaybackService", "Kokoro generation failed: ${e.message}", e)
+      lastErrorMessage = "Kokoro engine error: ${e.message}"
       return null
     }
   }

@@ -156,7 +156,7 @@ class BookLibraryModule(
       try {
         recoverInterruptedImports()
         val uri = Uri.parse(uriValue)
-        if (uri.scheme != "content") {
+        if (uri.scheme != "content" && uri.scheme != "file") {
           throw ImportFailure("BOOK_URI_UNSUPPORTED", "Please choose the book again from Android Files.")
         }
         val metadata = documentMetadata(uri)
@@ -479,6 +479,19 @@ class BookLibraryModule(
   }
 
   private fun documentMetadata(uri: Uri): DocumentMetadata {
+    if (uri.scheme == "file") {
+      val file = File(uri.path ?: "")
+      val safeName = sanitizeFileName(file.name.ifBlank { "Untitled book" })
+      val size = if (file.exists()) file.length() else -1L
+      val mime = when (file.extension.lowercase(Locale.ROOT)) {
+        "epub" -> "application/epub+zip"
+        "pdf" -> "application/pdf"
+        "txt" -> "text/plain"
+        else -> "application/octet-stream"
+      }
+      return DocumentMetadata(safeName, size, mime)
+    }
+
     var name: String? = null
     var size = -1L
     reactApplicationContext.contentResolver.query(
@@ -531,8 +544,14 @@ class BookLibraryModule(
     val digest = MessageDigest.getInstance("SHA-256")
     var copied = 0L
     var lastEmission = 0L
-    val input = reactApplicationContext.contentResolver.openInputStream(uri)
-      ?: throw ImportFailure("BOOK_OPEN_FAILED", "The selected file could not be read.")
+    val input = if (uri.scheme == "file") {
+      val f = File(uri.path ?: "")
+      if (!f.exists()) throw ImportFailure("BOOK_OPEN_FAILED", "The selected file could not be read.")
+      java.io.FileInputStream(f)
+    } else {
+      reactApplicationContext.contentResolver.openInputStream(uri)
+        ?: throw ImportFailure("BOOK_OPEN_FAILED", "The selected file could not be read.")
+    }
     input.use { source ->
       FileOutputStream(destination).use { output ->
         val buffer = ByteArray(64 * 1024)

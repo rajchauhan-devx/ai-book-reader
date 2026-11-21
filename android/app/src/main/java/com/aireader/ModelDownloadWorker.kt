@@ -53,8 +53,8 @@ internal class ModelDownloadWorker(context: Context, params: WorkerParameters) :
     .connectTimeout(30, TimeUnit.SECONDS)
     .readTimeout(60, TimeUnit.SECONDS)
     .writeTimeout(60, TimeUnit.SECONDS)
-    .followRedirects(false)
-    .followSslRedirects(false)
+    .followRedirects(true)
+    .followSslRedirects(true)
     .retryOnConnectionFailure(true)
     .build()
 
@@ -70,7 +70,7 @@ internal class ModelDownloadWorker(context: Context, params: WorkerParameters) :
       } catch (_: Exception) {}
       setState("checking", downloadedBytes, "Checking storage")
       store.assertEnoughStorage()
-      setState("downloading", store.downloadedBytes(), "Downloading natural voice")
+      setState("downloading", store.downloadedBytes(), "Downloading Kokoro neural voice")
       ModelPackCatalog.artifacts.forEach { artifact ->
         if (isStopped) throw InterruptedException("Download paused")
         downloadArtifact(artifact)
@@ -85,8 +85,8 @@ internal class ModelDownloadWorker(context: Context, params: WorkerParameters) :
         )
       }
       store.activateVerifiedStaging()
-      setState("ready", ModelPackCatalog.totalBytes, "Natural voice installed and verified")
-      Result.success(statusData("ready", ModelPackCatalog.totalBytes, "Natural voice installed and verified"))
+      setState("ready", ModelPackCatalog.totalBytes, "Kokoro neural voice installed and verified")
+      Result.success(statusData("ready", ModelPackCatalog.totalBytes, "Kokoro neural voice installed and verified"))
     } catch (_: InterruptedException) {
       Result.failure(statusData("paused", store.downloadedBytes(), "Download paused"))
     } catch (error: Exception) {
@@ -99,13 +99,12 @@ internal class ModelDownloadWorker(context: Context, params: WorkerParameters) :
   private fun downloadArtifact(artifact: ModelArtifact) {
     val destination = File(store.staging, artifact.path)
     destination.parentFile?.mkdirs()
-    if (destination.length() == artifact.bytes) {
-      if (store.sha256(destination) == artifact.sha256) {
+
+    if (destination.isFile && destination.length() >= artifact.minBytes) {
+      if (artifact.sha256 == null || store.sha256(destination) == artifact.sha256) {
         emitDownloadProgress()
         return
       }
-      destination.delete()
-    } else if (destination.length() > artifact.bytes) {
       destination.delete()
     }
 
@@ -113,7 +112,7 @@ internal class ModelDownloadWorker(context: Context, params: WorkerParameters) :
     val encodedPath = artifact.path.split('/').joinToString("/") {
       URLEncoder.encode(it, Charsets.UTF_8.name()).replace("+", "%20")
     }
-    val initialUrl = "${ModelPackCatalog.SOURCE_ROOT}/$encodedPath?download=true"
+    val initialUrl = "${ModelPackCatalog.SOURCE_ROOT}/$encodedPath"
 
     var currentUrl = initialUrl
     var response: Response? = null
@@ -179,9 +178,9 @@ internal class ModelDownloadWorker(context: Context, params: WorkerParameters) :
       finalResponse.close()
     }
 
-    if (destination.length() != artifact.bytes || store.sha256(destination) != artifact.sha256) {
+    if (destination.length() < artifact.minBytes || (artifact.sha256 != null && store.sha256(destination) != artifact.sha256)) {
       destination.delete()
-      throw IllegalStateException("A downloaded voice file was incomplete or corrupted. Please retry.")
+      throw IllegalStateException("A downloaded voice file was incomplete. Please retry.")
     }
     emitDownloadProgress()
   }

@@ -54,7 +54,6 @@ import { VoicePickerModal } from '../components/VoicePickerModal';
 import { ReaderPlayerBar } from '../components/ReaderPlayerBar';
 import { useNarrationPlayer } from '../state/NarrationPlayerProvider';
 import { narrationPlayerService } from '../services/narrationPlayer';
-import { opencodeMimoService } from '../services/opencodeMimoService';
 import { AppButton } from '../components/AppButton';
 import { fixLigatureSplits } from '../services/textNormalizer';
 import { useAppTheme } from '../theme/ThemeProvider';
@@ -515,44 +514,25 @@ export function ReaderScreen() {
           .savePreviewPosition(bookId, result.chapterId, result.offset)
           .catch(() => undefined);
 
-        // Background AI refinement via OpenCode MiMo v2.5 / on-device ligature normalization
+        // On-device ligature normalization for cleaner display & TTS
         const currentSentences = result.blocks
           .flatMap(b => b.sentences || [])
           .map(s => ({ index: s.index, text: s.text, id: s.id }));
 
         if (currentSentences.length > 0) {
-          opencodeMimoService
-            .refinePageSentences(currentSentences)
-            .then(async refined => {
-              if (!active || !refined.length) return;
-              const dbUpdates = refined
-                .map(r => {
-                  const orig = currentSentences.find(s => s.index === r.index);
-                  return { id: orig?.id || '', normalizedText: r.text };
-                })
-                .filter(u => u.id.length > 0);
-
-              if (dbUpdates.length > 0) {
-                await bookLibraryService.updateSentencesBatch(dbUpdates);
-              }
-
-              const stylesMap: Record<string, string> = {};
-              for (const r of refined) {
-                if (r.style && r.style !== 'neutral') {
-                  stylesMap[r.index.toString()] = r.style;
-                }
-              }
-              if (Object.keys(stylesMap).length > 0) {
-                await narrationPlayerService.setSentenceStyles(
-                  stylesMap,
-                  result.chapterId,
-                );
-              }
+          const dbUpdates = currentSentences
+            .map(s => {
+              const fixed = fixLigatureSplits(s.text);
+              return fixed !== s.text ? { id: s.id, normalizedText: fixed } : null;
             })
-            .catch(() => undefined);
+            .filter((u): u is { id: string; normalizedText: string } => u !== null && u.id.length > 0);
+
+          if (dbUpdates.length > 0) {
+            bookLibraryService.updateSentencesBatch(dbUpdates).catch(() => undefined);
+          }
         }
 
-        // Proactively pre-refine next page if available
+        // Proactively normalize next page if available
         if (result.nextOffset !== null && result.nextOffset !== undefined) {
           const nextOffset = result.nextOffset;
           bookLibraryService
@@ -563,35 +543,16 @@ export function ReaderScreen() {
                 .flatMap(b => b.sentences || [])
                 .map(s => ({ index: s.index, text: s.text, id: s.id }));
               if (nextSentences.length > 0) {
-                opencodeMimoService
-                  .refinePageSentences(nextSentences)
-                  .then(async nextRefined => {
-                    if (!active || !nextRefined.length) return;
-                    const nextDbUpdates = nextRefined
-                      .map(r => {
-                        const orig = nextSentences.find(s => s.index === r.index);
-                        return { id: orig?.id || '', normalizedText: r.text };
-                      })
-                      .filter(u => u.id.length > 0);
-
-                    if (nextDbUpdates.length > 0) {
-                      await bookLibraryService.updateSentencesBatch(nextDbUpdates);
-                    }
-
-                    const nextStylesMap: Record<string, string> = {};
-                    for (const r of nextRefined) {
-                      if (r.style && r.style !== 'neutral') {
-                        nextStylesMap[r.index.toString()] = r.style;
-                      }
-                    }
-                    if (Object.keys(nextStylesMap).length > 0) {
-                      await narrationPlayerService.setSentenceStyles(
-                        nextStylesMap,
-                        result.chapterId,
-                      );
-                    }
+                const nextDbUpdates = nextSentences
+                  .map(s => {
+                    const fixed = fixLigatureSplits(s.text);
+                    return fixed !== s.text ? { id: s.id, normalizedText: fixed } : null;
                   })
-                  .catch(() => undefined);
+                  .filter((u): u is { id: string; normalizedText: string } => u !== null && u.id.length > 0);
+
+                if (nextDbUpdates.length > 0) {
+                  bookLibraryService.updateSentencesBatch(nextDbUpdates).catch(() => undefined);
+                }
               }
             })
             .catch(() => undefined);
@@ -636,7 +597,7 @@ export function ReaderScreen() {
       Alert.alert(
         'Playing Narration',
         `Sentence ${selectedSentence.index + 1} (${result.isCached ? 'cached' : 'generated'} with ${
-          result.engine === 'natural' ? 'Chatterbox-Nano' : 'System Voice'
+          result.engine === 'kokoro' || result.engine === 'natural' ? 'Kokoro Neural' : 'System Voice'
         }, ${Math.max(1, Math.round(result.durationMs / 1000))}s)`,
       );
     } catch (err: any) {
@@ -1232,11 +1193,11 @@ export function ReaderScreen() {
 
                       let bg = 'transparent';
                       if (isMatchingSearch) {
-                        bg = '#FDE68A';
+                        bg = isDark ? '#6B501A' : '#FDE68A';
                       } else if (isPlayingSentence) {
-                        bg = isDark ? '#5C3D10' : '#FEF08A';
+                        bg = isDark ? 'rgba(224, 172, 97, 0.28)' : 'rgba(200, 135, 40, 0.20)';
                       } else if (isActive) {
-                        bg = isDark ? '#453314' : '#FEF3C7';
+                        bg = isDark ? 'rgba(224, 172, 97, 0.16)' : 'rgba(200, 135, 40, 0.10)';
                       } else if (highlight) {
                         const colorSpec = HIGHLIGHT_COLORS.find(
                           c => c.key === highlight.color,

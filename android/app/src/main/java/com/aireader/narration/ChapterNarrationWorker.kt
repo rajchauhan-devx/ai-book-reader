@@ -1,6 +1,5 @@
 package com.aireader.narration
 
-import android.app.ActivityManager
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
@@ -10,11 +9,9 @@ import android.os.PowerManager
 import androidx.work.Data
 import androidx.work.Worker
 import androidx.work.WorkerParameters
-import com.aireader.ChatterboxOnnxEngine
+import com.aireader.KokoroOnnxEngine
 import com.aireader.ModelPackCatalog
 import com.aireader.ModelPackStore
-import com.aireader.PerformanceMode
-import com.aireader.SystemTtsEngine
 import com.aireader.WavAudio
 import com.aireader.library.LibraryDatabase
 import java.io.File
@@ -26,17 +23,15 @@ class ChapterNarrationWorker(context: Context, parameters: WorkerParameters) : W
   companion object {
     private val inferenceSlot = Semaphore(1)
     private const val MIN_STORAGE_RESERVE = 64L * 1024L * 1024L // 64 MB
-    private const val MIN_FREE_MEMORY = 1_000L * 1024L * 1024L // 1 GB
   }
 
   private val cacheStore = AudioCacheStore(applicationContext)
   private val store = ModelPackStore(applicationContext)
-  private val systemTts = SystemTtsEngine(applicationContext)
 
   override fun doWork(): Result {
     val bookId = inputData.getString("bookId") ?: return Result.failure()
     val chapterId = inputData.getString("chapterId") ?: return Result.failure()
-    val voiceId = inputData.getString("voiceId") ?: "warm"
+    val voiceId = inputData.getString("voiceId") ?: "af_heart"
     val expression = inputData.getString("expression") ?: "natural"
 
     val database = LibraryDatabase.get(applicationContext)
@@ -49,8 +44,13 @@ class ChapterNarrationWorker(context: Context, parameters: WorkerParameters) : W
       return Result.success()
     }
 
+    if (!store.isInstalled()) {
+      reportProgress("failed", bookId, chapterId, voiceId, 0, totalSentences, 0.0, "", "Kokoro voice model is not installed. Please download it in Model Setup.")
+      return Result.failure()
+    }
+
     var acquired = false
-    var engine: ChatterboxOnnxEngine? = null
+    var engine: KokoroOnnxEngine? = null
 
     try {
       while (!acquired) {
@@ -63,17 +63,6 @@ class ChapterNarrationWorker(context: Context, parameters: WorkerParameters) : W
 
       val voiceProfile = VoiceCatalog.findVoice(voiceId)
       val expressionPreset = VoiceCatalog.findExpression(expression)
-      val useNatural = voiceProfile.engine == "natural" && store.isInstalled() && hasEnoughMemory()
-
-      val referenceAudio = if (useNatural) {
-        val refFile = File(applicationContext.filesDir, voiceProfile.referenceAsset ?: "voice/neutral-reference.wav")
-        if (!refFile.exists() || refFile.length() < 44) {
-          systemTts.synthesizeReference(refFile)
-        }
-        WavAudio.readMono(refFile)
-      } else null
-
-      val performanceMode = PerformanceMode.BALANCED
 
       var readyCount = 0
 
@@ -94,13 +83,13 @@ class ChapterNarrationWorker(context: Context, parameters: WorkerParameters) : W
 
         val cacheKey = cacheStore.computeCacheKey(
           normalizedText = normalized,
-          modelPackId = "chatterbox-nano",
+          modelPackId = "kokoro-82m",
           modelVersion = ModelPackCatalog.PACK_VERSION,
-          voiceId = voiceId,
+          voiceId = voiceProfile.id,
           expression = expressionPreset.id,
         )
 
-        val targetFile = cacheStore.segmentFile(bookId, voiceId, chapterId, index, cacheKey)
+        val targetFile = cacheStore.segmentFile(bookId, voiceProfile.id, chapterId, index, cacheKey)
 
         if (cacheStore.isValidWav(targetFile)) {
           readyCount++
@@ -109,7 +98,7 @@ class ChapterNarrationWorker(context: Context, parameters: WorkerParameters) : W
             "generating",
             bookId,
             chapterId,
-            voiceId,
+            voiceProfile.id,
             readyCount,
             totalSentences,
             progressFraction,
@@ -124,7 +113,7 @@ class ChapterNarrationWorker(context: Context, parameters: WorkerParameters) : W
           "generating",
           bookId,
           chapterId,
-          voiceId,
+          voiceProfile.id,
           readyCount,
           totalSentences,
           progressFraction,
@@ -135,22 +124,17 @@ class ChapterNarrationWorker(context: Context, parameters: WorkerParameters) : W
         val tempOutput = File(applicationContext.cacheDir, "narration-working/temp_${System.currentTimeMillis()}.wav")
         tempOutput.parentFile?.mkdirs()
 
-        if (useNatural && referenceAudio != null) {
-          if (engine == null) {
-            engine = ChatterboxOnnxEngine(store)
-          }
-          val generated = engine.generate(
-            text = normalized,
-            reference = referenceAudio,
-            performanceMode = performanceMode,
-            isCancelled = { isStopped || Thread.currentThread().isInterrupted },
-            onProgress = { _, _ -> },
-          )
-          WavAudio.writeMonoPcm16(tempOutput, generated.samples)
-        } else {
-          // Fallback to SystemTts
-          systemTts.synthesizeReference(tempOutput)
+        if (engine == null) {
+          engine = KokoroOnnxEngine(store)
         }
+        val generated = engine.generate(
+          text = normalized,
+          voiceId = voiceProfile.id,
+          speed = 1.0f,
+          isCancelled = { isStopped || Thread.currentThread().isInterrupted },
+          onProgress = { _, _ -> },
+        )
+        WavAudio.writeMonoPcm16(tempOutput, generated.samples)
 
         if (cacheStore.isValidWav(tempOutput)) {
           targetFile.parentFile?.mkdirs()
@@ -165,7 +149,7 @@ class ChapterNarrationWorker(context: Context, parameters: WorkerParameters) : W
         "ready",
         bookId,
         chapterId,
-        voiceId,
+        voiceProfile.id,
         readyCount,
         totalSentences,
         1.0,
@@ -197,36 +181,30 @@ class ChapterNarrationWorker(context: Context, parameters: WorkerParameters) : W
   }
 
   private fun checkDeviceHealth() {
-    // 1. Storage check
-    if (applicationContext.filesDir.usableSpace < MIN_STORAGE_RESERVE) {
-      throw IllegalStateException("Low device storage. Free space to continue generating audio.")
+    val stat = android.os.StatFs(applicationContext.cacheDir.absolutePath)
+    val available = stat.availableBytes
+    if (available < MIN_STORAGE_RESERVE) {
+      throw IllegalStateException("Low device storage for narration synthesis.")
     }
 
-    // 2. Battery check
-    val batteryIntent = applicationContext.registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
-    val level = batteryIntent?.getIntExtra(BatteryManager.EXTRA_LEVEL, -1) ?: -1
-    val scale = batteryIntent?.getIntExtra(BatteryManager.EXTRA_SCALE, 100) ?: 100
-    val status = batteryIntent?.getIntExtra(BatteryManager.EXTRA_STATUS, -1) ?: -1
-    val isCharging = status == BatteryManager.BATTERY_STATUS_CHARGING || status == BatteryManager.BATTERY_STATUS_FULL
-    val batteryPct = if (level >= 0) level * 100 / scale.coerceAtLeast(1) else 100
+    val batteryFilter = IntentFilter(Intent.ACTION_BATTERY_CHANGED)
+    val batteryStatus = applicationContext.registerReceiver(null, batteryFilter)
+    val level = batteryStatus?.getIntExtra(BatteryManager.EXTRA_LEVEL, -1) ?: -1
+    val scale = batteryStatus?.getIntExtra(BatteryManager.EXTRA_SCALE, -1) ?: -1
+    val isCharging = batteryStatus?.getIntExtra(BatteryManager.EXTRA_STATUS, -1) == BatteryManager.BATTERY_STATUS_CHARGING
+    val batteryPct = if (level >= 0 && scale > 0) (level * 100 / scale) else 100
 
-    if (batteryPct < 15 && !isCharging) {
-      throw IllegalStateException("Battery below 15%. Plug in your phone to continue background narration.")
+    if (batteryPct < 10 && !isCharging) {
+      throw IllegalStateException("Battery below 10% and not charging.")
     }
 
-    // 3. Thermal check
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-      val power = applicationContext.getSystemService(Context.POWER_SERVICE) as PowerManager
-      if (power.currentThermalStatus >= PowerManager.THERMAL_STATUS_SEVERE) {
-        throw IllegalStateException("Phone is too warm for sustained audio generation right now.")
+      val powerManager = applicationContext.getSystemService(Context.POWER_SERVICE) as? PowerManager
+      val thermal = powerManager?.currentThermalStatus ?: PowerManager.THERMAL_STATUS_NONE
+      if (thermal >= PowerManager.THERMAL_STATUS_SEVERE) {
+        throw IllegalStateException("Device thermal throttling engaged.")
       }
     }
-  }
-
-  private fun hasEnoughMemory(): Boolean {
-    val am = applicationContext.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
-    val mi = ActivityManager.MemoryInfo().also(am::getMemoryInfo)
-    return mi.availMem >= MIN_FREE_MEMORY
   }
 
   private fun reportProgress(
@@ -234,8 +212,8 @@ class ChapterNarrationWorker(context: Context, parameters: WorkerParameters) : W
     bookId: String,
     chapterId: String,
     voiceId: String,
-    readyCount: Int,
-    totalCount: Int,
+    readySegments: Int,
+    totalSegments: Int,
     progress: Double,
     currentText: String,
     message: String,
@@ -245,8 +223,8 @@ class ChapterNarrationWorker(context: Context, parameters: WorkerParameters) : W
       .putString("bookId", bookId)
       .putString("chapterId", chapterId)
       .putString("voiceId", voiceId)
-      .putInt("readySegments", readyCount)
-      .putInt("totalSegments", totalCount)
+      .putInt("readySegments", readySegments)
+      .putInt("totalSegments", totalSegments)
       .putDouble("progress", progress)
       .putString("currentText", currentText)
       .putString("message", message)

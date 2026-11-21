@@ -55,13 +55,11 @@ class NarrationPlayerModule(reactContext: ReactApplicationContext) : ReactContex
   ) {
     try {
       NarrationPlaybackService.activeEngineMode = engineMode
-      NarrationPlaybackService.activeEdgeVoice = edgeVoice ?: "en-US-JennyNeural"
 
       if (NarrationPlaybackService.isServiceActive) {
         val intent = Intent(reactApplicationContext, NarrationPlaybackService::class.java).apply {
           action = NarrationPlaybackService.ACTION_SET_ENGINE_CONFIG
           putExtra(NarrationPlaybackService.EXTRA_ENGINE_MODE, engineMode)
-          putExtra(NarrationPlaybackService.EXTRA_EDGE_VOICE, edgeVoice ?: "en-US-JennyNeural")
         }
         startService(intent)
       }
@@ -90,11 +88,10 @@ class NarrationPlayerModule(reactContext: ReactApplicationContext) : ReactContex
         putExtra(NarrationPlaybackService.EXTRA_BOOK_ID, bookId)
         putExtra(NarrationPlaybackService.EXTRA_CHAPTER_ID, chapterId)
         putExtra(NarrationPlaybackService.EXTRA_SENTENCE_INDEX, sentenceIndex.toInt())
-        putExtra(NarrationPlaybackService.EXTRA_VOICE_ID, voiceId ?: "warm")
+        putExtra(NarrationPlaybackService.EXTRA_VOICE_ID, voiceId ?: "af_bella")
         putExtra(NarrationPlaybackService.EXTRA_EXPRESSION, expression ?: "natural")
         putExtra(NarrationPlaybackService.EXTRA_SPEED, (speed ?: 1.0).toFloat())
         putExtra(NarrationPlaybackService.EXTRA_ENGINE_MODE, effectiveEngine)
-        putExtra(NarrationPlaybackService.EXTRA_EDGE_VOICE, NarrationPlaybackService.activeEdgeVoice)
         if (pageSize != null && pageSize > 0) {
           putExtra(NarrationPlaybackService.EXTRA_PAGE_SIZE, pageSize.toInt())
         }

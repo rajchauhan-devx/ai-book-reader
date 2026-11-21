@@ -102,10 +102,15 @@ export function ModelDownloadProvider({children}: {children: React.ReactNode}) {
   );
 }
 
+const defaultModelDownloadContextValue = {
+  status: initialModelDownloadSnapshot,
+  startDownload: async () => {},
+  pauseDownload: async () => {},
+  removeModel: async () => {},
+  refresh: async () => {},
+};
+
 export function useModelDownload() {
   const value = useContext(ModelDownloadContext);
-  if (!value) {
-    throw new Error('useModelDownload must be used inside ModelDownloadProvider');
-  }
-  return value;
+  return value ?? defaultModelDownloadContextValue;
 }

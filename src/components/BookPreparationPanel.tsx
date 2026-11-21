@@ -101,84 +101,24 @@ export function BookPreparationPanel({ book }: { book: Book }) {
       </View>
       {ready ? (
         <View style={styles.actionGroup}>
-          <View
-            style={[
-              styles.modeCard,
-              { backgroundColor: colors.surface, borderColor: colors.border },
-            ]}
-          >
-            <View style={styles.modeCardContent}>
-              <View
-                style={[
-                  styles.modeIconCircle,
-                  { backgroundColor: colors.brandSoft },
-                ]}
-              >
-                <BookOpen size={20} color={colors.brand} />
-              </View>
-              <View style={styles.modeTextCol}>
-                <Text style={[styles.modeTitle, { color: colors.ink }]}>
-                  Normal Reading Mode
-                </Text>
-                <Text style={[styles.modeDesc, { color: colors.inkMuted }]}>
-                  Visual e-reader · Distraction-free · No audio
-                </Text>
-              </View>
-            </View>
-            <AppButton
-              label="Read Book"
-              icon={BookOpen}
-              variant="secondary"
-              fullWidth
-              onPress={() =>
-                navigation.navigate('Reader', { bookId: book.id, mode: 'read' })
-              }
-            />
-          </View>
-
-          <View
-            style={[
-              styles.modeCard,
-              { backgroundColor: colors.surface, borderColor: colors.border },
-            ]}
-          >
-            <View style={styles.modeCardContent}>
-              <View
-                style={[
-                  styles.modeIconCircle,
-                  { backgroundColor: colors.brandSoft },
-                ]}
-              >
-                <Headphones size={20} color={colors.brand} />
-              </View>
-              <View style={styles.modeTextCol}>
-                <Text style={[styles.modeTitle, { color: colors.ink }]}>
-                  Audiobook Mode
-                </Text>
-                <Text style={[styles.modeDesc, { color: colors.inkMuted }]}>
-                  AI neural narration · Word sync · Background audio
-                </Text>
-              </View>
-            </View>
-            <AppButton
-              label="Listen (Audiobook)"
-              icon={Headphones}
-              fullWidth
-              onPress={() =>
-                navigation.navigate('Reader', {
-                  bookId: book.id,
-                  mode: 'audiobook',
-                })
-              }
-            />
-          </View>
-
           <AppButton
-            label="Preview prepared blocks"
-            variant="ghost"
+            label="Listen (Audiobook)"
+            icon={Headphones}
             fullWidth
             onPress={() =>
-              navigation.navigate('TextPreview', { bookId: book.id })
+              navigation.navigate('Reader', {
+                bookId: book.id,
+                mode: 'audiobook',
+              })
+            }
+          />
+          <AppButton
+            label="Read Book"
+            icon={BookOpen}
+            variant="secondary"
+            fullWidth
+            onPress={() =>
+              navigation.navigate('Reader', { bookId: book.id, mode: 'read' })
             }
           />
         </View>

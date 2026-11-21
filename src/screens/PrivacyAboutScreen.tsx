@@ -177,7 +177,7 @@ export function PrivacyAboutScreen() {
               </Text>
               <Text style={[styles.itemBody, { color: colors.inkMuted }]}>
                 Voice narration runs directly on your phone's processor using
-                ONNX Runtime and quantized Chatterbox-Nano neural weights. No
+                ONNX Runtime and quantized Kokoro-82M neural weights. No
                 cloud audio servers or external APIs.
               </Text>
             </View>
@@ -284,10 +284,10 @@ export function PrivacyAboutScreen() {
         <View style={styles.licenseRow}>
           <View style={styles.licenseInfo}>
             <Text style={[styles.licenseName, { color: colors.ink }]}>
-              Chatterbox-Nano ONNX
+              Kokoro-82M ONNX
             </Text>
             <Text style={[styles.licenseDetail, { color: colors.inkMuted }]}>
-              Neural speech synthesis weights · MIT / Apache 2.0
+              Neural speech synthesis weights · Apache 2.0
             </Text>
           </View>
         </View>

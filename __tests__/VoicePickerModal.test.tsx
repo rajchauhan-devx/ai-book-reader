@@ -32,10 +32,10 @@ describe('VoicePickerModal', () => {
     mockGetCuratedVoices.mockResolvedValue({
       voices: [
         {
-          id: 'warm',
-          name: 'Warm Narrator',
-          descriptor: 'Rich, engaging tone',
-          engine: 'natural',
+          id: 'af_bella',
+          name: 'Bella (Warm Narrator)',
+          descriptor: 'Warm, expressive American female voice',
+          engine: 'kokoro',
           isDefault: true,
         },
       ],
@@ -45,8 +45,9 @@ describe('VoicePickerModal', () => {
       ],
     });
     mockGetPreferences.mockResolvedValue({
-      voiceId: 'warm',
+      voiceId: 'af_bella',
       expression: 'natural',
+      speed: 1.0,
     });
     mockSavePreferences.mockImplementation(patch => Promise.resolve(patch));
   });

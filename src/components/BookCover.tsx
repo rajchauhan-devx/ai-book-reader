@@ -12,26 +12,44 @@ type Props = {
 export function BookCover({ book, width = 132, height = 190 }: Props) {
   const [failedUri, setFailedUri] = useState<string>();
   const imageUri = book.cover.imageUri;
-  if (imageUri && imageUri !== failedUri)
+
+  const renderSpineEffects = () => (
+    <>
+      {/* Book spine highlight and fold crease */}
+      <View style={styles.spineHighlight} pointerEvents="none" />
+      <View style={styles.spineShadow} pointerEvents="none" />
+      <View style={styles.spineSheen} pointerEvents="none" />
+    </>
+  );
+
+  if (imageUri && imageUri !== failedUri) {
     return (
-      <Image
-        source={{ uri: imageUri }}
-        accessibilityLabel={`${book.title} book cover`}
-        accessibilityRole="image"
-        onError={() => setFailedUri(imageUri)}
-        resizeMode="cover"
+      <View
         style={[
-          styles.cover,
+          styles.container,
           { width, height, backgroundColor: book.cover.background },
         ]}
-      />
+      >
+        <Image
+          source={{ uri: imageUri }}
+          accessibilityLabel={`${book.title} book cover`}
+          accessibilityRole="image"
+          onError={() => setFailedUri(imageUri)}
+          resizeMode="cover"
+          style={[styles.image, { width, height }]}
+        />
+        {renderSpineEffects()}
+      </View>
     );
+  }
+
   return (
     <View
       accessibilityRole="image"
       accessibilityLabel={`${book.title} book cover`}
       style={[
-        styles.cover,
+        styles.container,
+        styles.fallbackCover,
         { width, height, backgroundColor: book.cover.background },
       ]}
     >
@@ -47,21 +65,52 @@ export function BookCover({ book, width = 132, height = 190 }: Props) {
           {book.author}
         </Text>
       </View>
+      {renderSpineEffects()}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  cover: {
-    borderRadius: radius.sm,
+  container: {
+    borderRadius: 8,
     overflow: 'hidden',
+    position: 'relative',
+    shadowColor: '#000000',
+    shadowOffset: { width: 2, height: 6 },
+    shadowOpacity: 0.22,
+    shadowRadius: 10,
+    elevation: 6,
+  },
+  image: {
+    borderRadius: 8,
+  },
+  fallbackCover: {
     padding: spacing.md,
     justifyContent: 'space-between',
-    shadowColor: '#000000',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.18,
-    shadowRadius: 10,
-    elevation: 5,
+  },
+  spineHighlight: {
+    position: 'absolute',
+    left: 0,
+    top: 0,
+    bottom: 0,
+    width: 4,
+    backgroundColor: 'rgba(255, 255, 255, 0.24)',
+  },
+  spineShadow: {
+    position: 'absolute',
+    left: 4,
+    top: 0,
+    bottom: 0,
+    width: 3,
+    backgroundColor: 'rgba(0, 0, 0, 0.20)',
+  },
+  spineSheen: {
+    position: 'absolute',
+    left: 7,
+    top: 0,
+    bottom: 0,
+    width: 2,
+    backgroundColor: 'rgba(255, 255, 255, 0.10)',
   },
   rule: { width: 28, height: 3, borderRadius: 3 },
   mark: {

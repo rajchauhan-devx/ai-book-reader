@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   FlatList,
   Pressable,
@@ -22,6 +22,7 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Screen } from '../components/Screen';
 import { AppButton } from '../components/AppButton';
 import { BookCover } from '../components/BookCover';
+import { VoicePickerModal } from '../components/VoicePickerModal';
 import { useAppTheme } from '../theme/ThemeProvider';
 import { radius, spacing, typography } from '../theme/tokens';
 import type { RootStackParamList } from '../types/navigation';
@@ -36,6 +37,7 @@ export function HomeScreen() {
   const { width } = useWindowDimensions();
   const { books } = useLibrary();
   const { status: model } = useModelDownload();
+  const [showVoicePicker, setShowVoicePicker] = useState(false);
 
   const currentBook = continueReading(books);
   const totalBooks = books.length;
@@ -235,28 +237,47 @@ export function HomeScreen() {
           </View>
         )}
 
-        {/* Offline Voice Model Setup Banner */}
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="Natural voice model status"
-          onPress={() => navigation.navigate('ModelSetup')}
-          style={[styles.modelCard, { backgroundColor: colors.brand }]}
-        >
-          <Sparkles size={24} color="#F5E5C7" />
-          <View style={styles.flex}>
-            <Text style={styles.modelTitle}>
-              {model.state === 'ready'
-                ? 'Offline Voice Engine · Ready'
-                : 'Natural Offline Voice · Free'}
+        {/* Offline Voice Engine Status */}
+        {model.state === 'ready' ? (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Natural voice model status"
+            onPress={() => navigation.navigate('ModelSetup')}
+            style={[
+              styles.voiceStatusPill,
+              { backgroundColor: colors.surface, borderColor: colors.border },
+            ]}
+          >
+            <View style={styles.voicePillLeft}>
+              <View style={[styles.voiceStatusDot, { backgroundColor: '#10B981' }]} />
+              <Sparkles size={16} color={colors.listen} />
+              <Text style={[styles.voiceStatusText, { color: colors.ink }]}>
+                Narrator: Heart (Kokoro-82M Offline)
+              </Text>
+            </View>
+            <Text style={[styles.voiceChangeLink, { color: colors.brand }]}>
+              Change
             </Text>
-            <Text style={styles.modelBody}>
-              {model.state === 'ready'
-                ? 'Chatterbox-Nano natural English voice installed. Tap to test.'
-                : 'One-time setup for patient, human-like narration without internet.'}
-            </Text>
-          </View>
-          <ChevronRight size={20} color="#F5E5C7" />
-        </Pressable>
+          </Pressable>
+        ) : (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Natural voice model status"
+            onPress={() => navigation.navigate('ModelSetup')}
+            style={[styles.modelCard, { backgroundColor: colors.brand }]}
+          >
+            <Sparkles size={24} color="#F5E5C7" />
+            <View style={styles.flex}>
+              <Text style={styles.modelTitle}>
+                Natural Offline Voice · Free
+              </Text>
+              <Text style={styles.modelBody}>
+                One-time setup for patient, human-like narration without internet.
+              </Text>
+            </View>
+            <ChevronRight size={20} color="#F5E5C7" />
+          </Pressable>
+        )}
 
         {/* Quick Actions */}
         <View style={styles.quickActionsRow}>
@@ -425,11 +446,42 @@ export function HomeScreen() {
           </View>
         ) : null}
       </ScrollView>
+      <VoicePickerModal
+        visible={showVoicePicker}
+        onClose={() => setShowVoicePicker(false)}
+      />
     </Screen>
   );
 }
 
 const styles = StyleSheet.create({
+  voiceStatusPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: spacing.md,
+    paddingVertical: 10,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+  },
+  voicePillLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  voiceStatusDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  voiceStatusText: {
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  voiceChangeLink: {
+    fontSize: 12,
+    fontWeight: '700',
+  },
   content: {
     padding: spacing.md,
     paddingBottom: spacing.xxl,

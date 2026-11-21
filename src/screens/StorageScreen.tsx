@@ -313,14 +313,14 @@ export function StorageScreen() {
 
         {modelStatus.state === 'ready' && (
           <AppButton
-            label="Remove natural voice model (547 MB)"
+            label="Remove Kokoro neural voice model (~86 MB)"
             icon={Trash2}
             variant="ghost"
             fullWidth
             onPress={() =>
               Alert.alert(
-                'Remove natural voice files?',
-                'The phone voice will continue to work. You can re-download the natural voice pack anytime.',
+                'Remove Kokoro neural voice files?',
+                'You can re-download the Kokoro neural voice pack anytime in Model Setup.',
                 [
                   { text: 'Cancel', style: 'cancel' },
                   {

@@ -23,7 +23,7 @@ describe('model download status', () => {
       supported: true,
       availableBytes: 0,
       memoryBytes: 0,
-      packVersion: 'chatterbox-nano-onnx-1',
+      packVersion: 'kokoro-v1.0-onnx',
     });
   });
 
@@ -34,6 +34,6 @@ describe('model download status', () => {
   });
 
   it('formats the model size for the progress screen', () => {
-    expect(formatDownloadBytes(MODEL_PACK_BYTES)).toBe('547 MB');
+    expect(formatDownloadBytes(MODEL_PACK_BYTES)).toBe('84 MB');
   });
 });

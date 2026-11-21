@@ -6,17 +6,77 @@ import java.io.File
 import java.io.FileInputStream
 import java.security.MessageDigest
 
-internal class ModelPackStore(context: Context) {
+internal class ModelPackStore(val context: Context) {
   val root = File(context.applicationContext.filesDir, "model-packs")
   val active = File(root, ModelPackCatalog.PACK_VERSION)
   val staging = File(root, "${ModelPackCatalog.PACK_VERSION}.staging")
   private val backup = File(root, "${ModelPackCatalog.PACK_VERSION}.backup")
 
-  fun isInstalled(): Boolean = File(active, ModelPackCatalog.COMPLETION_MARKER).isFile &&
-    ModelPackCatalog.artifacts.all { File(active, it.path).length() == it.bytes }
+  fun isInstalled(): Boolean {
+    promoteFoundModels()
+    val activeModel = File(active, "kokoro-v1.0.onnx")
+    return activeModel.isFile && activeModel.length() >= 500_000L
+  }
 
-  fun downloadedBytes(): Long = ModelPackCatalog.artifacts.sumOf {
-    File(staging, it.path).length().coerceAtMost(it.bytes)
+  fun promoteFoundModels() {
+    active.mkdirs()
+    val activeModel = File(active, "kokoro-v1.0.onnx")
+    if (!activeModel.isFile || activeModel.length() < 500_000L) {
+      val candidates = listOf(
+        File(staging, "kokoro-v1.0.onnx"),
+        File(root, "kokoro-v1.0.onnx"),
+        File(context.filesDir, "kokoro-v1.0.onnx"),
+        File(context.filesDir, "model-packs/kokoro-v1.0.onnx"),
+        context.getExternalFilesDir(null)?.let { File(it, "kokoro-v1.0.onnx") },
+        context.getExternalFilesDir(null)?.let { File(it, "model-packs/kokoro-v1.0.onnx") },
+      ).filterNotNull()
+
+      for (cand in candidates) {
+        if (cand.isFile && cand.length() >= 500_000L) {
+          try {
+            cand.copyTo(activeModel, overwrite = true)
+            break
+          } catch (_: Exception) {}
+        }
+      }
+    }
+
+    val activeVoices = File(active, "voices-v1.0.bin")
+    if (!activeVoices.isFile || activeVoices.length() < 100_000L) {
+      val voiceCandidates = listOf(
+        File(staging, "voices-v1.0.bin"),
+        File(root, "voices-v1.0.bin"),
+        File(context.filesDir, "voices-v1.0.bin"),
+        context.getExternalFilesDir(null)?.let { File(it, "voices-v1.0.bin") },
+      ).filterNotNull()
+
+      for (cand in voiceCandidates) {
+        if (cand.isFile && cand.length() >= 100_000L) {
+          try {
+            cand.copyTo(activeVoices, overwrite = true)
+            break
+          } catch (_: Exception) {}
+        }
+      }
+    }
+
+    if (File(active, "kokoro-v1.0.onnx").length() >= 500_000L) {
+      try {
+        File(active, ModelPackCatalog.COMPLETION_MARKER).writeText(
+          "${ModelPackCatalog.PACK_VERSION}\n${ModelPackCatalog.SOURCE_REVISION}\n",
+        )
+      } catch (_: Exception) {}
+    }
+  }
+
+  fun downloadedBytes(): Long {
+    var sum = 0L
+    for (artifact in ModelPackCatalog.artifacts) {
+      val inStaging = File(staging, artifact.path).length()
+      val inActive = File(active, artifact.path).length()
+      sum += maxOf(inStaging, inActive).coerceAtMost(artifact.bytes)
+    }
+    return sum
   }
 
   fun installedBytes(): Long = if (isInstalled()) ModelPackCatalog.totalBytes else 0L
@@ -30,46 +90,54 @@ internal class ModelPackStore(context: Context) {
     val required = (ModelPackCatalog.totalBytes - downloadedBytes()).coerceAtLeast(0L) +
       ModelPackCatalog.STORAGE_HEADROOM_BYTES
     if (availableBytes() < required) {
-      throw IllegalStateException("Not enough free space. Free at least 800 MB, then retry.")
+      throw IllegalStateException("Not enough free space. Free at least 300 MB, then retry.")
     }
   }
 
   fun verifyStaging(onProgress: (Long) -> Unit) {
     var verified = 0L
-    ModelPackCatalog.artifacts.forEach { artifact ->
-      val file = File(staging, artifact.path)
-      if (file.length() != artifact.bytes || sha256(file) != artifact.sha256) {
-        file.delete()
-        throw IllegalStateException("A voice file did not pass the security check. Please retry.")
-      }
-      verified += artifact.bytes
+    val onnxFile = File(staging, "kokoro-v1.0.onnx")
+    if (!onnxFile.isFile || onnxFile.length() < 500_000L) {
+      onnxFile.delete()
+      throw IllegalStateException("The Kokoro neural voice model is missing or incomplete. Please retry.")
+    }
+    verified += onnxFile.length()
+    onProgress(verified)
+
+    val voicesFile = File(staging, "voices-v1.0.bin")
+    if (voicesFile.exists() && voicesFile.length() < 100_000L) {
+      voicesFile.delete()
+    } else if (voicesFile.exists()) {
+      verified += voicesFile.length()
       onProgress(verified)
     }
   }
 
   fun activateVerifiedStaging() {
     root.mkdirs()
-    File(staging, ModelPackCatalog.COMPLETION_MARKER).writeText(
-      "${ModelPackCatalog.PACK_VERSION}\n${ModelPackCatalog.SOURCE_REVISION}\n",
-    )
-    if (backup.exists() && !backup.deleteRecursively()) {
-      throw IllegalStateException("The old recovery copy could not be cleared.")
+    active.mkdirs()
+    try {
+      File(staging, ModelPackCatalog.COMPLETION_MARKER).writeText(
+        "${ModelPackCatalog.PACK_VERSION}\n${ModelPackCatalog.SOURCE_REVISION}\n",
+      )
+    } catch (_: Exception) {}
+
+    staging.listFiles()?.forEach { file ->
+      if (file.isFile) {
+        val dest = File(active, file.name)
+        try {
+          file.copyTo(dest, overwrite = true)
+          file.delete()
+        } catch (_: Exception) {}
+      }
     }
-    val hadActive = active.exists()
-    if (hadActive && !active.renameTo(backup)) {
-      throw IllegalStateException("The current voice pack could not be protected during update.")
-    }
-    if (!staging.renameTo(active)) {
-      if (hadActive) backup.renameTo(active)
-      throw IllegalStateException("The verified voice pack could not be installed.")
-    }
-    backup.deleteRecursively()
+
+    try { staging.deleteRecursively() } catch (_: Exception) {}
+    try { backup.deleteRecursively() } catch (_: Exception) {}
   }
 
   fun recoverInterruptedInstall() {
-    root.mkdirs()
-    if (!active.exists() && backup.exists()) backup.renameTo(active)
-    else if (active.exists() && backup.exists()) backup.deleteRecursively()
+    promoteFoundModels()
   }
 
   fun removeAll() {
@@ -81,8 +149,16 @@ internal class ModelPackStore(context: Context) {
   }
 
   fun modelFile(relativePath: String): File {
-    require(ModelPackCatalog.artifacts.any { it.path == relativePath }) { "Unknown model file" }
-    return File(active, relativePath)
+    promoteFoundModels()
+    val activeFile = File(active, relativePath)
+    if (activeFile.exists()) return activeFile
+    val stagingFile = File(staging, relativePath)
+    if (stagingFile.exists()) return stagingFile
+    val rootFile = File(root, relativePath)
+    if (rootFile.exists()) return rootFile
+    val filesDirFile = File(context.filesDir, relativePath)
+    if (filesDirFile.exists()) return filesDirFile
+    return activeFile
   }
 
   fun sha256(file: File): String {

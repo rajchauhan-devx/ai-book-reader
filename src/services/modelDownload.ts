@@ -6,7 +6,7 @@ import {
 import type {ModelPackState} from './contracts';
 
 export const MODEL_DOWNLOAD_EVENT = 'ModelDownloadProgress';
-export const MODEL_PACK_BYTES = 573_374_780;
+export const MODEL_PACK_BYTES = 88_436_096;
 
 export type ModelDownloadSnapshot = {
   state: ModelPackState;
@@ -61,7 +61,7 @@ export const initialModelDownloadSnapshot: ModelDownloadSnapshot = {
   supported: true,
   availableBytes: 0,
   memoryBytes: 0,
-  packVersion: 'chatterbox-nano-onnx-1',
+  packVersion: 'kokoro-v1.0-onnx',
 };
 
 function asNumber(value: unknown, fallback: number): number {

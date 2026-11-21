@@ -5,34 +5,34 @@ const checksum = 'a'.repeat(64);
 function validManifest() {
   return {
     schemaVersion: 1,
-    id: 'chatterbox-nano-en',
+    id: 'kokoro-v1-en',
     version: '1.0.0',
-    displayName: 'Natural English',
-    variant: 'nano',
+    displayName: 'Kokoro Natural English',
+    variant: 'kokoro',
     languageTags: ['en'],
     runtime: {
       id: 'onnxruntime',
       minimumVersion: '1.24.0',
-      entryManifest: 'runtime/chatterbox.json',
+      entryManifest: 'runtime/kokoro.json',
       supportedAbis: ['arm64-v8a'],
     },
     compatibility: {
       minimumAppVersion: '0.1.0',
       minimumAndroidApi: 29,
-      minimumRamBytes: 6_000_000_000,
-      recommendedRamBytes: 8_000_000_000,
-      requiredFreeBytes: 2_000_000_000,
+      minimumRamBytes: 2_000_000_000,
+      recommendedRamBytes: 4_000_000_000,
+      requiredFreeBytes: 500_000_000,
     },
     artifacts: [
-      {path: 'runtime/chatterbox.json', bytes: 1024, sha256: checksum, role: 'runtime-config'},
-      {path: 'models/language-model.onnx', bytes: 2048, sha256: checksum, role: 'language-model'},
+      {path: 'runtime/kokoro.json', bytes: 1024, sha256: checksum, role: 'runtime-config'},
+      {path: 'models/kokoro-v1.0.onnx', bytes: 2048, sha256: checksum, role: 'language-model'},
     ],
   };
 }
 
-test('accepts a valid Chatterbox Nano pack manifest', () => {
+test('accepts a valid Kokoro pack manifest', () => {
   const manifest = parseModelManifest(validManifest());
-  expect(manifest.id).toBe('chatterbox-nano-en');
+  expect(manifest.id).toBe('kokoro-v1-en');
   expect(getModelDownloadBytes(manifest)).toBe(3072);
 });
 

@@ -12,7 +12,7 @@ internal object WavAudio {
   fun readMono(file: File, targetSampleRate: Int = 24_000, maxSeconds: Int = 12): MonoAudio {
     val bytes = file.readBytes()
     require(bytes.size >= 44 && ascii(bytes, 0, 4) == "RIFF" && ascii(bytes, 8, 4) == "WAVE") {
-      "The phone voice did not create a readable WAV reference."
+      "The audio file did not contain a readable WAV reference."
     }
     var offset = 12
     var format = 0

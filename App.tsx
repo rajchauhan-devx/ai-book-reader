@@ -1,15 +1,15 @@
 import React from 'react';
 import {ActivityIndicator, StatusBar, StyleSheet, Text, View} from 'react-native';
 import {SafeAreaProvider} from 'react-native-safe-area-context';
-import {AppNavigator} from './src/navigation/AppNavigator';
 import {AppThemeProvider, useAppTheme} from './src/theme/ThemeProvider';
-import {AppBootstrapProvider, useAppBootstrap} from './src/state/AppBootstrapProvider';
-import {FirstLaunchScreen} from './src/screens/FirstLaunchScreen';
-import {typography} from './src/theme/tokens';
 import {ModelDownloadProvider} from './src/state/ModelDownloadProvider';
 import {NarrationEngineProvider} from './src/state/NarrationEngineProvider';
 import {NarrationPlayerProvider} from './src/state/NarrationPlayerProvider';
 import {LibraryProvider} from './src/state/LibraryProvider';
+import {AppBootstrapProvider, useAppBootstrap} from './src/state/AppBootstrapProvider';
+import {FirstLaunchScreen} from './src/screens/FirstLaunchScreen';
+import {AppNavigator} from './src/navigation/AppNavigator';
+import {typography} from './src/theme/tokens';
 
 function App() {
   return (

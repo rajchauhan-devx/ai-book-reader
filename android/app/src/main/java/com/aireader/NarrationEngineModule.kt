@@ -1,25 +1,25 @@
 package com.aireader
 
+import android.app.Activity
 import android.app.ActivityManager
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.media.AudioAttributes
 import android.media.MediaPlayer
+import android.net.Uri
 import android.os.BatteryManager
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.os.PowerManager
+import android.provider.OpenableColumns
 import androidx.lifecycle.Observer
 import androidx.work.Data
 import androidx.work.ExistingWorkPolicy
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkInfo
 import androidx.work.WorkManager
-import android.app.Activity
-import android.net.Uri
-import android.provider.OpenableColumns
 import com.aireader.library.LibraryDatabase
 import com.aireader.narration.AudioCacheStore
 import com.aireader.narration.AudioDecoder
@@ -42,25 +42,36 @@ import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 
+enum class PerformanceMode {
+  BALANCED,
+  QUALITY,
+  SPEED;
+
+  companion object {
+    fun from(value: String?): PerformanceMode {
+      return entries.firstOrNull { it.name.equals(value, ignoreCase = true) } ?: BALANCED
+    }
+  }
+}
+
 class NarrationEngineModule(reactContext: ReactApplicationContext) : ReactContextBaseJavaModule(reactContext) {
   companion object {
     private const val EVENT_NAME = "NarrationEngineProgress"
     private const val EVENT_CHAPTER_PREP = "ChapterNarrationProgress"
     private const val PREFS = "narration-engine"
     private const val PREF_MODE = "performance-mode"
-    private const val SAMPLE_TEXT = "Every great story begins with a single page, and a voice that makes the words feel alive."
+    private const val SAMPLE_TEXT = "Look, every great story begins with a single page, and a voice that makes the characters feel truly alive."
     private const val PICK_AUDIO_REQUEST = 4102
   }
 
   private val executor = Executors.newSingleThreadExecutor()
   private val store = ModelPackStore(reactContext)
-  private val systemTts = SystemTtsEngine(reactContext)
   private val cacheStore = AudioCacheStore(reactContext)
   private val workManager = WorkManager.getInstance(reactContext)
   private val mainHandler = Handler(Looper.getMainLooper())
   private val cancelled = AtomicBoolean(false)
   private val running = AtomicBoolean(false)
-  private var engine: ChatterboxOnnxEngine? = null
+  private var engine: KokoroOnnxEngine? = null
   private var player: MediaPlayer? = null
   private var listenerCount = 0
   private var audioPickerPromise: Promise? = null
@@ -146,87 +157,71 @@ class NarrationEngineModule(reactContext: ReactApplicationContext) : ReactContex
   }
 
   @ReactMethod
-  fun testVoice(text: String?, preferNatural: Boolean, promise: Promise) {
+  fun testVoice(text: String?, preferNatural: Boolean, voiceId: String?, promise: Promise) {
     if (!running.compareAndSet(false, true)) {
       promise.reject("VOICE_BUSY", "A voice test is already running.")
       return
     }
     stopPlayback()
-    systemTts.stop()
     cancelled.set(false)
     val sample = text?.trim()?.takeIf { it.isNotEmpty() }?.take(360) ?: SAMPLE_TEXT
+    val requestedVoice = VoiceCatalog.findVoice(voiceId)
+
     executor.execute {
       var playbackStarted = false
       try {
-        if (!preferNatural || !store.isInstalled()) {
-          playbackStarted = speakWithPhoneVoice(sample, if (store.isInstalled()) null else "Natural voice is not installed")
-          promise.resolve(resultMap("system", null, 0, 0, null, "Using the offline phone voice"))
+        if (!store.isInstalled()) {
+          running.set(false)
+          emit("failed", 0.0, "Kokoro voice model is not installed. Please download it in Model Setup.", "none")
+          promise.reject(
+            "MODEL_NOT_INSTALLED",
+            "Kokoro neural voice model is not installed yet. Please download it in Model Setup.",
+          )
           return@execute
         }
 
         val deviceReason = naturalVoiceBlockReason()
         if (deviceReason != null) {
-          playbackStarted = speakWithPhoneVoice(sample, deviceReason)
-          promise.resolve(resultMap("system", null, 0, 0, deviceReason, "Using the offline phone voice"))
+          running.set(false)
+          emit("failed", 0.0, deviceReason, "none")
+          promise.reject("DEVICE_BUSY", deviceReason)
           return@execute
         }
 
-        emit("preparing", 0.02, "Preparing a private narrator reference", "natural")
-        val referenceFile = File(reactApplicationContext.filesDir, "voice/neutral-reference.wav")
-        val reference = WavAudio.readMono(systemTts.synthesizeReference(referenceFile))
+        emit("preparing", 0.02, "Preparing Kokoro neural voice (${requestedVoice.name})", "kokoro")
         if (cancelled.get()) throw InterruptedException("Voice test stopped")
-        val performanceMode = currentMode()
-        val naturalEngine = engine ?: ChatterboxOnnxEngine(store).also { engine = it }
-        val generated = naturalEngine.generate(
-          sample,
-          reference,
-          performanceMode,
-          cancelled::get,
-        ) { progress, progressMessage -> emit("generating", progress, progressMessage, "natural") }
+        val kokoroEngine = engine ?: KokoroOnnxEngine(store).also { engine = it }
+        val generated = kokoroEngine.generate(
+          text = sample,
+          voiceId = requestedVoice.id,
+          speed = 1.0f,
+          isCancelled = cancelled::get,
+        ) { progress, progressMessage -> emit("generating", progress, progressMessage, "kokoro") }
         if (cancelled.get()) throw InterruptedException("Voice test stopped")
         val output = File(reactApplicationContext.cacheDir, "generated/test-${UUID.randomUUID()}.wav")
         WavAudio.writeMonoPcm16(output, generated.samples)
         val durationMs = generated.samples.size * 1_000L / 24_000L
-        val realtimeFactor = if (durationMs > 0) generated.generationMillis.toDouble() / durationMs else 0.0
-        startPlayback(output) { emit("ready", 1.0, "Natural voice test finished", "natural") }
+        val realtimeFactor = if (durationMs > 0L) generated.generationMillis.toDouble() / durationMs else 0.0
+        startPlayback(output) { emit("ready", 1.0, "Kokoro voice test finished", "kokoro") }
         playbackStarted = true
-        emit("playing", 1.0, "Playing the natural voice sample", "natural")
+        emit("playing", 1.0, "Playing Kokoro voice (${requestedVoice.name})", "kokoro")
         promise.resolve(
           resultMap(
-            "natural",
+            "kokoro",
             output.absolutePath,
             durationMs,
             generated.generationMillis,
             null,
-            "Generated ${generated.generatedTokens} voice tokens on this phone",
+            "Synthesized with Kokoro-82M on-device (${requestedVoice.name})",
             realtimeFactor,
           ),
         )
       } catch (_: InterruptedException) {
-        emit("idle", 0.0, "Voice test stopped", "natural")
+        emit("idle", 0.0, "Voice test stopped", "kokoro")
         promise.reject("VOICE_CANCELLED", "Voice test stopped")
       } catch (error: Exception) {
-        if (cancelled.get()) {
-          emit("idle", 0.0, "Voice test stopped", "natural")
-          promise.reject("VOICE_CANCELLED", "Voice test stopped")
-        } else {
-          try {
-            playbackStarted = speakWithPhoneVoice(sample, error.message ?: "Natural voice could not start")
-            promise.resolve(
-              resultMap(
-                "system",
-                null,
-                0,
-                0,
-                error.message ?: "Natural voice could not start",
-                "Natural voice needs attention; using the offline phone voice",
-              ),
-            )
-          } catch (fallbackError: Exception) {
-            emit("failed", 0.0, fallbackError.message ?: "No voice could be played", "none")
-            promise.reject("VOICE_TEST_FAILED", fallbackError.message, fallbackError)
-          }
-        }
+        emit("failed", 0.0, error.message ?: "Kokoro voice test failed", "none")
+        promise.reject("VOICE_TEST_FAILED", error.message, error)
       } finally {
         if (!playbackStarted) running.set(false)
       }
@@ -330,8 +325,8 @@ class NarrationEngineModule(reactContext: ReactApplicationContext) : ReactContex
         val profile = VoiceProfile(
           id = voiceId,
           name = cleanName,
-          descriptor = "Custom cloned voice · ${"%.1f".format(durationSec)}s sample",
-          engine = "natural",
+          descriptor = "Custom voice · ${"%.1f".format(durationSec)}s sample",
+          engine = "kokoro",
           referenceAsset = "custom_voices/$voiceId.wav",
           isDefault = false,
           isCustom = true,
@@ -408,9 +403,13 @@ class NarrationEngineModule(reactContext: ReactApplicationContext) : ReactContex
     promise: Promise,
   ) {
     stopPlayback()
-    systemTts.stop()
     executor.execute {
       try {
+        if (!store.isInstalled()) {
+          promise.reject("MODEL_NOT_INSTALLED", "Kokoro-82M voice model is not installed. Please download it in Model Setup.")
+          return@execute
+        }
+
         val selectedVoice = VoiceCatalog.findVoice(voiceId)
         val selectedExpr = VoiceCatalog.findExpression(expression)
         val sIndex = sentenceIndex.toInt()
@@ -431,7 +430,7 @@ class NarrationEngineModule(reactContext: ReactApplicationContext) : ReactContex
 
         val cacheKey = cacheStore.computeCacheKey(
           normalizedText = normalized,
-          modelPackId = "chatterbox-nano",
+          modelPackId = "kokoro-82m",
           modelVersion = ModelPackCatalog.PACK_VERSION,
           voiceId = selectedVoice.id,
           expression = selectedExpr.id,
@@ -451,28 +450,18 @@ class NarrationEngineModule(reactContext: ReactApplicationContext) : ReactContex
           return@execute
         }
 
-        val useNatural = selectedVoice.engine == "natural" && store.isInstalled() && naturalVoiceBlockReason() == null
         val targetFile = cachedFile
         targetFile.parentFile?.mkdirs()
 
-        if (useNatural) {
-          val refFile = File(reactApplicationContext.filesDir, selectedVoice.referenceAsset ?: "voice/neutral-reference.wav")
-          if (!refFile.exists() || refFile.length() < 44) {
-            systemTts.synthesizeReference(refFile)
-          }
-          val reference = WavAudio.readMono(refFile)
-          val naturalEngine = engine ?: ChatterboxOnnxEngine(store).also { engine = it }
-          val generated = naturalEngine.generate(
-            text = normalized,
-            reference = reference,
-            performanceMode = currentMode(),
-            isCancelled = cancelled::get,
-            onProgress = { _, _ -> },
-          )
-          WavAudio.writeMonoPcm16(targetFile, generated.samples)
-        } else {
-          systemTts.synthesizeTextToFile(normalized, targetFile)
-        }
+        val kokoroEngine = engine ?: KokoroOnnxEngine(store).also { engine = it }
+        val generated = kokoroEngine.generate(
+          text = normalized,
+          voiceId = selectedVoice.id,
+          speed = 1.0f,
+          isCancelled = cancelled::get,
+          onProgress = { _, _ -> },
+        )
+        WavAudio.writeMonoPcm16(targetFile, generated.samples)
 
         val durationMs = cacheStore.wavDurationMs(targetFile)
         startPlayback(targetFile) { }
@@ -480,7 +469,7 @@ class NarrationEngineModule(reactContext: ReactApplicationContext) : ReactContex
           putString("audioPath", targetFile.absolutePath)
           putDouble("durationMs", durationMs.toDouble())
           putBoolean("isCached", false)
-          putString("engine", if (useNatural) "natural" else "system")
+          putString("engine", "kokoro")
         }
         promise.resolve(map)
       } catch (error: Exception) {
@@ -502,7 +491,7 @@ class NarrationEngineModule(reactContext: ReactApplicationContext) : ReactContex
       val inputData = Data.Builder()
         .putString("bookId", bookId)
         .putString("chapterId", chapterId)
-        .putString("voiceId", voiceId ?: "warm")
+        .putString("voiceId", voiceId ?: "af_heart")
         .putString("expression", expression ?: "natural")
         .build()
 
@@ -564,7 +553,6 @@ class NarrationEngineModule(reactContext: ReactApplicationContext) : ReactContex
   fun cancel(promise: Promise) {
     cancelled.set(true)
     engine?.cancel()
-    systemTts.stop()
     stopPlayback()
     running.set(false)
     emit("idle", 0.0, "Voice test stopped", "none")
@@ -575,7 +563,6 @@ class NarrationEngineModule(reactContext: ReactApplicationContext) : ReactContex
   fun unload(promise: Promise) {
     cancelled.set(true)
     engine?.cancel()
-    systemTts.stop()
     stopPlayback()
     executor.execute {
       engine?.close()
@@ -608,16 +595,6 @@ class NarrationEngineModule(reactContext: ReactApplicationContext) : ReactContex
     }
   }
 
-  private fun speakWithPhoneVoice(text: String, fallbackReason: String?): Boolean {
-    emit("preparing", 0.2, "Preparing the offline phone voice", "system")
-    systemTts.speak(text) { success ->
-      running.set(false)
-      emit(if (success) "ready" else "failed", 1.0, if (success) "Phone voice test finished" else "Phone voice playback failed", "system")
-    }
-    emit("playing", 1.0, fallbackReason ?: "Playing the offline phone voice", "system")
-    return true
-  }
-
   private fun startPlayback(file: File, onComplete: () -> Unit) {
     stopPlayback()
     val mediaPlayer = MediaPlayer()
@@ -636,7 +613,7 @@ class NarrationEngineModule(reactContext: ReactApplicationContext) : ReactContex
       failedPlayer.release()
       if (player === failedPlayer) player = null
       running.set(false)
-      emit("failed", 1.0, "The generated sample could not be played", "natural")
+      emit("failed", 1.0, "The generated sample could not be played", "kokoro")
       true
     }
     mediaPlayer.prepare()
@@ -653,11 +630,11 @@ class NarrationEngineModule(reactContext: ReactApplicationContext) : ReactContex
   private fun naturalVoiceBlockReason(): String? {
     val activityManager = reactApplicationContext.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
     val memory = ActivityManager.MemoryInfo().also(activityManager::getMemoryInfo)
-    if (memory.availMem < 1_000L * 1024L * 1024L) return "Not enough free memory for natural voice right now"
+    if (memory.availMem < 300L * 1024L * 1024L) return "Not enough free memory for neural voice right now"
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
       val power = reactApplicationContext.getSystemService(Context.POWER_SERVICE) as PowerManager
       if (power.currentThermalStatus >= PowerManager.THERMAL_STATUS_SEVERE) {
-        return "The phone is too warm for natural voice right now"
+        return "The phone is too warm for neural voice right now"
       }
     }
     return null
@@ -683,6 +660,7 @@ class NarrationEngineModule(reactContext: ReactApplicationContext) : ReactContex
       putString("performanceMode", currentMode().name.lowercase())
       putBoolean("modelInstalled", store.isInstalled())
       putBoolean("running", running.get())
+      putString("engine", if (store.isInstalled()) "kokoro" else "none")
       putInt("batteryPercent", batteryPercent)
       putInt("thermalStatus", thermal)
     }
@@ -726,7 +704,7 @@ class NarrationEngineModule(reactContext: ReactApplicationContext) : ReactContex
       putString("state", state)
       putString("bookId", data.getString("bookId") ?: "")
       putString("chapterId", data.getString("chapterId") ?: "")
-      putString("voiceId", data.getString("voiceId") ?: "warm")
+      putString("voiceId", data.getString("voiceId") ?: "af_heart")
       putInt("readySegments", data.getInt("readySegments", 0))
       putInt("totalSegments", data.getInt("totalSegments", 0))
       putDouble("progress", data.getDouble("progress", 0.0))
@@ -743,7 +721,6 @@ class NarrationEngineModule(reactContext: ReactApplicationContext) : ReactContex
   override fun invalidate() {
     cancelled.set(true)
     engine?.cancel()
-    systemTts.stop()
     stopPlayback()
     executor.shutdownNow()
     if (executor.awaitTermination(3, TimeUnit.SECONDS)) engine?.close()

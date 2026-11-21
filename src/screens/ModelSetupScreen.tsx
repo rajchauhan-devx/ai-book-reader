@@ -45,7 +45,6 @@ export function ModelSetupScreen() {
     result: voiceResult,
     error: voiceError,
     testNaturalVoice,
-    testPhoneVoice,
     stop,
   } = useNarrationEngine();
   const progressPercent = Math.round(status.progress * 100);
@@ -250,9 +249,7 @@ export function ModelSetupScreen() {
               <Check size={17} color={colors.success} />
               <View style={styles.flex}>
                 <Text style={[styles.resultTitle, {color: colors.ink}]}>
-                  {voiceResult.engine === 'natural'
-                    ? 'Natural voice is working'
-                    : 'Phone voice is working'}
+                  Kokoro neural voice is working
                 </Text>
                 <Text style={[styles.resultBody, {color: colors.inkMuted}]}>
                   {voiceResult.fallbackReason ?? voiceResult.message}
@@ -281,7 +278,7 @@ export function ModelSetupScreen() {
       ) : isReady ? (
         <View style={styles.actions}>
           <AppButton
-            label="Configure AI Engine, Voices & API Key"
+            label="Configure Kokoro Offline Voices"
             icon={Sparkles}
             variant="secondary"
             fullWidth
@@ -294,11 +291,11 @@ export function ModelSetupScreen() {
                 ? 'Stop sample'
                 : voiceStatus.state === 'generating' || voiceStatus.state === 'preparing'
                   ? 'Stop voice test'
-                  : 'Test natural voice'
+                  : 'Test Kokoro voice'
             }
             icon={voiceBusy ? Square : Play}
             fullWidth
-            onPress={voiceBusy ? stop : testNaturalVoice}
+            onPress={voiceBusy ? stop : () => testNaturalVoice()}
           />
           <AppButton
             label="Done"
@@ -323,13 +320,6 @@ export function ModelSetupScreen() {
           onPress={beginDownload}
         />
       )}
-      <AppButton
-        label={isReady ? 'Test phone voice instead' : 'Use phone voice for now'}
-        variant="ghost"
-        fullWidth
-        disabled={isBusy || voiceBusy}
-        onPress={testPhoneVoice}
-      />
 
       <VoicePickerModal
         visible={showVoicePicker}

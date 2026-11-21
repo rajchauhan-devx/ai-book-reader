@@ -50,7 +50,7 @@ describe('PrivacyAboutScreen', () => {
     expect(flattenedText).toContain('Zero Telemetry & Tracking');
     expect(flattenedText).toContain('Local On-Device Speech Synthesis');
     expect(flattenedText).toContain('Diagnostics Export');
-    expect(flattenedText).toContain('Chatterbox-Nano ONNX');
+    expect(flattenedText).toContain('Kokoro-82M ONNX');
     expect(flattenedText).toContain('Danger Zone');
   });
 

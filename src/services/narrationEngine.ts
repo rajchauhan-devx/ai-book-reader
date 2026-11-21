@@ -13,7 +13,7 @@ export type NarrationEngineState =
   | 'failed';
 
 export type PerformanceMode = 'battery' | 'balanced' | 'quality';
-export type NarrationEngineKind = 'natural' | 'system' | 'none';
+export type NarrationEngineKind = 'kokoro' | 'natural' | 'system' | 'none';
 
 export type NarrationEngineSnapshot = {
   state: NarrationEngineState;
@@ -40,7 +40,11 @@ export type VoiceTestResult = {
 type NativeNarrationEngine = {
   getStatus(): Promise<unknown>;
   setPerformanceMode(mode: PerformanceMode): Promise<PerformanceMode>;
-  testVoice(text: string | null, preferNatural: boolean): Promise<unknown>;
+  testVoice(
+    text: string | null,
+    preferNatural: boolean,
+    voiceId?: string | null,
+  ): Promise<unknown>;
   cancel(): Promise<boolean>;
   unload(): Promise<boolean>;
   getGeneratedAudioBytes(): Promise<number>;
@@ -75,7 +79,7 @@ const states = new Set<NarrationEngineState>([
   'failed',
 ]);
 const modes = new Set<PerformanceMode>(['battery', 'balanced', 'quality']);
-const engines = new Set<NarrationEngineKind>(['natural', 'system', 'none']);
+const engines = new Set<NarrationEngineKind>(['kokoro', 'natural', 'system', 'none']);
 
 function number(value: unknown, fallback = 0) {
   return typeof value === 'number' && Number.isFinite(value) ? value : fallback;
@@ -112,8 +116,12 @@ export function normalizeNarrationSnapshot(
 
 export function normalizeVoiceTestResult(value: unknown): VoiceTestResult {
   const candidate = (value ?? {}) as Record<string, unknown>;
+  const eng =
+    candidate.engine === 'natural' || candidate.engine === 'kokoro'
+      ? 'natural'
+      : 'system';
   return {
-    engine: candidate.engine === 'natural' ? 'natural' : 'system',
+    engine: eng,
     audioPath:
       typeof candidate.audioPath === 'string' ? candidate.audioPath : null,
     durationMs: Math.max(0, number(candidate.durationMs)),
@@ -147,9 +155,19 @@ export const narrationEngineService = {
   async setMode(mode: PerformanceMode) {
     await requireEngine().setPerformanceMode(mode);
   },
-  async test(preferNatural: boolean, text?: string) {
+  async test(preferNatural: boolean, text?: string, voiceId?: string) {
+    const cleanText =
+      typeof text === 'string' && text.trim().length > 0 ? text.trim() : '';
+    const cleanVoiceId =
+      typeof voiceId === 'string' && voiceId.trim().length > 0
+        ? voiceId.trim()
+        : 'af_heart';
     return normalizeVoiceTestResult(
-      await requireEngine().testVoice(text ?? null, preferNatural),
+      await requireEngine().testVoice(
+        cleanText,
+        preferNatural,
+        cleanVoiceId,
+      ),
     );
   },
   async cancel() {

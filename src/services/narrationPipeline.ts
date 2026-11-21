@@ -6,17 +6,20 @@ import {
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import {
-  type EdgeVoiceId,
-  type NarrationEngineMode,
-  edgeTtsService,
-} from './edgeTtsService';
+  type KokoroVoiceId,
+  KOKORO_VOICES,
+  kokoroTtsService,
+} from './kokoroTtsService';
 
 export type VoiceProfile = {
   id: string;
   name: string;
   descriptor: string;
-  engine: 'natural' | 'system' | 'edge';
+  engine: 'kokoro' | 'natural' | 'system';
   isDefault: boolean;
+  gender?: 'female' | 'male';
+  accent?: 'American' | 'British';
+  tone?: string;
   isCustom?: boolean;
   sampleDurationSec?: number;
 };
@@ -61,55 +64,29 @@ export type ChapterPreparationProgress = {
 };
 
 export type NarrationPreferences = {
-  voiceId: string;
+  voiceId: KokoroVoiceId;
   expression: string;
-  engineMode: NarrationEngineMode;
-  edgeVoice: EdgeVoiceId;
-  chatterboxVoice: string;
-  opencodeApiKey?: string;
-  opencodeBaseUrl?: string;
-  opencodeModel?: string;
-  enableAiRefinement?: boolean;
+  speed: number;
 };
 
 const PREFS_KEY = '@ai-book-reader/narration-preferences';
 
-export const DEFAULT_VOICES: VoiceProfile[] = [
-  {
-    id: 'warm',
-    name: 'Warm Narrator',
-    descriptor: 'Rich, engaging tone ideal for fiction and storytelling',
-    engine: 'natural',
-    isDefault: true,
-  },
-  {
-    id: 'clear',
-    name: 'Clear Voice',
-    descriptor: 'Balanced, precise tone best for non-fiction and study',
-    engine: 'natural',
-    isDefault: false,
-  },
-  {
-    id: 'deep',
-    name: 'Deep Voice',
-    descriptor: 'Resonant, dramatic tone for mysteries and epics',
-    engine: 'natural',
-    isDefault: false,
-  },
-  {
-    id: 'gentle',
-    name: 'Gentle Voice',
-    descriptor: 'Soft, calm cadence for relaxed and bedtime reading',
-    engine: 'natural',
-    isDefault: false,
-  },
-];
+export const DEFAULT_VOICES: VoiceProfile[] = KOKORO_VOICES.map(v => ({
+  id: v.id,
+  name: v.name,
+  descriptor: v.descriptor,
+  engine: 'kokoro',
+  isDefault: v.isDefault === true,
+  gender: v.gender,
+  accent: v.accent,
+  tone: v.tone,
+}));
 
 export const DEFAULT_EXPRESSIONS: ExpressionPreset[] = [
   {
     id: 'calm',
     name: 'Calm',
-    descriptor: 'Steady, controlled pacing',
+    descriptor: 'Steady, relaxed pacing',
   },
   {
     id: 'natural',
@@ -124,15 +101,9 @@ export const DEFAULT_EXPRESSIONS: ExpressionPreset[] = [
 ];
 
 export const defaultNarrationPreferences: NarrationPreferences = {
-  voiceId: 'warm',
+  voiceId: 'af_heart',
   expression: 'natural',
-  engineMode: 'edge-cloud',
-  edgeVoice: 'en-US-JennyNeural',
-  chatterboxVoice: 'warm',
-  opencodeApiKey: '',
-  opencodeBaseUrl: 'https://opencode.ai/zen/v1',
-  opencodeModel: 'mimo-v2.5-free',
-  enableAiRefinement: true,
+  speed: 1.0,
 };
 
 const nativeEngine = NativeModules.NarrationEngine;
@@ -149,37 +120,16 @@ class NarrationPipelineService {
       if (!raw) return defaultNarrationPreferences;
       const parsed = JSON.parse(raw) as Partial<NarrationPreferences>;
       return {
-        voiceId: typeof parsed.voiceId === 'string' ? parsed.voiceId : 'warm',
+        voiceId:
+          parsed.voiceId && kokoroTtsService.isValidVoice(parsed.voiceId)
+            ? (parsed.voiceId as KokoroVoiceId)
+            : 'af_bella',
         expression:
           typeof parsed.expression === 'string' ? parsed.expression : 'natural',
-        engineMode:
-          parsed.engineMode === 'chatterbox-local'
-            ? 'chatterbox-local'
-            : 'edge-cloud',
-        edgeVoice:
-          parsed.edgeVoice && edgeTtsService.isValidVoice(parsed.edgeVoice)
-            ? parsed.edgeVoice
-            : 'en-US-JennyNeural',
-        chatterboxVoice:
-          typeof parsed.chatterboxVoice === 'string'
-            ? parsed.chatterboxVoice
-            : 'warm',
-        opencodeApiKey:
-          typeof parsed.opencodeApiKey === 'string'
-            ? parsed.opencodeApiKey
-            : '',
-        opencodeBaseUrl:
-          typeof parsed.opencodeBaseUrl === 'string'
-            ? parsed.opencodeBaseUrl
-            : 'https://opencode.ai/zen/v1',
-        opencodeModel:
-          typeof parsed.opencodeModel === 'string'
-            ? parsed.opencodeModel
-            : 'mimo-v2.5-free',
-        enableAiRefinement:
-          typeof parsed.enableAiRefinement === 'boolean'
-            ? parsed.enableAiRefinement
-            : true,
+        speed:
+          typeof parsed.speed === 'number' && Number.isFinite(parsed.speed)
+            ? parsed.speed
+            : 1.0,
       };
     } catch {
       return defaultNarrationPreferences;
@@ -191,15 +141,12 @@ class NarrationPipelineService {
   ): Promise<NarrationPreferences> {
     const current = await this.getPreferences();
     const updated: NarrationPreferences = {
-      voiceId: patch.voiceId ?? current.voiceId,
+      voiceId:
+        patch.voiceId && kokoroTtsService.isValidVoice(patch.voiceId)
+          ? patch.voiceId
+          : current.voiceId,
       expression: patch.expression ?? current.expression,
-      engineMode: patch.engineMode ?? current.engineMode,
-      edgeVoice: patch.edgeVoice ?? current.edgeVoice,
-      chatterboxVoice: patch.chatterboxVoice ?? current.chatterboxVoice,
-      opencodeApiKey: patch.opencodeApiKey !== undefined ? patch.opencodeApiKey : current.opencodeApiKey,
-      opencodeBaseUrl: patch.opencodeBaseUrl !== undefined ? patch.opencodeBaseUrl : current.opencodeBaseUrl,
-      opencodeModel: patch.opencodeModel !== undefined ? patch.opencodeModel : current.opencodeModel,
-      enableAiRefinement: patch.enableAiRefinement !== undefined ? patch.enableAiRefinement : current.enableAiRefinement,
+      speed: patch.speed ?? current.speed,
     };
     await AsyncStorage.setItem(PREFS_KEY, JSON.stringify(updated));
     return updated;
@@ -287,7 +234,7 @@ class NarrationPipelineService {
       audioPath: typeof result.audioPath === 'string' ? result.audioPath : null,
       durationMs: Number(result.durationMs) || 0,
       isCached: result.isCached === true,
-      engine: typeof result.engine === 'string' ? result.engine : 'natural',
+      engine: typeof result.engine === 'string' ? result.engine : 'kokoro',
     };
   }
 
@@ -344,7 +291,7 @@ class NarrationPipelineService {
 
   async pickReferenceAudio(): Promise<AudioSelection | null> {
     if (!nativeEngine?.pickReferenceAudio) {
-      throw new Error('Audio picker is not available on this platform.');
+      return null;
     }
     const result = await nativeEngine.pickReferenceAudio();
     if (!result || typeof result !== 'object') return null;
@@ -364,7 +311,7 @@ class NarrationPipelineService {
       id: String(result.id),
       name: String(result.name),
       descriptor: String(result.descriptor),
-      engine: 'natural',
+      engine: 'kokoro',
       isDefault: false,
       isCustom: true,
       sampleDurationSec: Number(result.sampleDurationSec) || 0,
@@ -391,7 +338,7 @@ class NarrationPipelineService {
           state: (e.state as ChapterPreparationProgress['state']) ?? 'idle',
           bookId: typeof e.bookId === 'string' ? e.bookId : '',
           chapterId: typeof e.chapterId === 'string' ? e.chapterId : '',
-          voiceId: typeof e.voiceId === 'string' ? e.voiceId : 'warm',
+          voiceId: typeof e.voiceId === 'string' ? e.voiceId : 'af_bella',
           readySegments: Number(e.readySegments) || 0,
           totalSegments: Number(e.totalSegments) || 0,
           progress: Number(e.progress) || 0,

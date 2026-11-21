@@ -49,10 +49,7 @@ export function NarrationPlayerProvider({ children }: { children: React.ReactNod
 
     // Sync engine config from saved preferences
     narrationPipelineService.getPreferences().then(async prefs => {
-      await narrationPlayerService.setEngineConfig(
-        prefs.engineMode,
-        prefs.edgeVoice,
-      );
+      await narrationPlayerService.setEngineConfig(prefs.voiceId);
     }).catch(() => undefined);
 
     // Subscribe to native playback events
@@ -76,19 +73,14 @@ export function NarrationPlayerProvider({ children }: { children: React.ReactNod
       pageSize?: number,
     ) => {
       let effectiveVoice = voiceId;
-      let effectiveEngine: string | undefined;
       try {
         const prefs = await narrationPipelineService.getPreferences();
-        effectiveEngine = prefs.engineMode;
         if (!effectiveVoice) {
-          effectiveVoice =
-            prefs.engineMode === 'chatterbox-local'
-              ? prefs.chatterboxVoice || 'warm'
-              : prefs.edgeVoice || 'en-US-JennyNeural';
+          effectiveVoice = prefs.voiceId || 'af_heart';
         }
       } catch {
         if (!effectiveVoice) {
-          effectiveVoice = 'warm';
+          effectiveVoice = 'af_heart';
         }
       }
       return narrationPlayerService.play(
@@ -99,7 +91,7 @@ export function NarrationPlayerProvider({ children }: { children: React.ReactNod
         expression,
         speed ?? playerState.speed,
         pageSize,
-        effectiveEngine,
+        'kokoro',
       );
     },
     [playerState.speed],

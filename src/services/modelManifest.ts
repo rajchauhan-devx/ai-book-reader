@@ -24,10 +24,10 @@ export type ModelManifest = {
   id: string;
   version: string;
   displayName: string;
-  variant: 'nano';
+  variant: 'kokoro' | 'nano';
   languageTags: string[];
   runtime: {
-    id: 'onnxruntime' | 'chatterboxcpp';
+    id: 'onnxruntime';
     minimumVersion: string;
     entryManifest: string;
     supportedAbis: ('arm64-v8a' | 'x86_64')[];
@@ -79,8 +79,8 @@ export function parseModelManifest(value: unknown): ModelManifest {
   if (!hasString(value.version) || !versionPattern.test(value.version)) {
     throw new Error('Model manifest version is invalid.');
   }
-  if (value.variant !== 'nano') {
-    throw new Error('Only the Chatterbox Nano variant is supported in the first pack.');
+  if (value.variant !== 'kokoro' && value.variant !== 'nano') {
+    throw new Error('Only the Kokoro offline neural variant is supported.');
   }
   if (!Array.isArray(value.languageTags) || value.languageTags.length === 0 || !value.languageTags.every(hasString)) {
     throw new Error('At least one model language is required.');
@@ -89,7 +89,7 @@ export function parseModelManifest(value: unknown): ModelManifest {
   const runtime = value.runtime;
   if (
     !isObject(runtime) ||
-    (runtime.id !== 'onnxruntime' && runtime.id !== 'chatterboxcpp') ||
+    runtime.id !== 'onnxruntime' ||
     !hasString(runtime.minimumVersion) ||
     !hasString(runtime.entryManifest) ||
     !safePathPattern.test(runtime.entryManifest) ||

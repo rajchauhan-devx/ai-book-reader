@@ -43,8 +43,8 @@ export const initialPlayerState: PlayerState = {
   pagePreparationReady: 0,
   pagePreparationTotal: 0,
   errorMessage: null,
-  engineMode: 'edge-cloud',
-  voiceId: 'warm',
+  engineMode: 'kokoro',
+  voiceId: 'af_heart',
   isModelLoaded: false,
 };
 
@@ -67,18 +67,12 @@ class NarrationPlayerService {
     }
   }
 
-  async setEngineConfig(
-    engineMode: string,
-    edgeVoice?: string | null,
-  ): Promise<boolean> {
+  async setEngineConfig(voiceId: string): Promise<boolean> {
     if (!NativePlayer?.setEngineConfig) {
       return true;
     }
     try {
-      return await NativePlayer.setEngineConfig(
-        engineMode,
-        edgeVoice ?? null,
-      );
+      return await NativePlayer.setEngineConfig(voiceId);
     } catch {
       return false;
     }
@@ -296,8 +290,8 @@ class NarrationPlayerService {
       pagePreparationReady: Number(raw.pagePreparationReady) || 0,
       pagePreparationTotal: Number(raw.pagePreparationTotal) || 0,
       errorMessage: raw.errorMessage ? String(raw.errorMessage) : null,
-      engineMode: raw.engineMode ? String(raw.engineMode) : 'edge-cloud',
-      voiceId: raw.voiceId ? String(raw.voiceId) : 'warm',
+      engineMode: raw.engineMode ? String(raw.engineMode) : 'kokoro',
+      voiceId: raw.voiceId ? String(raw.voiceId) : 'af_bella',
       isModelLoaded: Boolean(raw.isModelLoaded),
     };
   }

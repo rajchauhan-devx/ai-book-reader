@@ -19,13 +19,13 @@ describe('narrationPipelineService', () => {
 
   it('saves and updates preferences in AsyncStorage', async () => {
     await narrationPipelineService.savePreferences({
-      voiceId: 'clear',
+      voiceId: 'af_sarah',
       expression: 'expressive',
     });
     const updated = await narrationPipelineService.getPreferences();
     expect(updated).toEqual({
       ...defaultNarrationPreferences,
-      voiceId: 'clear',
+      voiceId: 'af_sarah',
       expression: 'expressive',
     });
   });
@@ -34,7 +34,7 @@ describe('narrationPipelineService', () => {
     const catalog = await narrationPipelineService.getCuratedVoices();
     expect(catalog.voices).toEqual(DEFAULT_VOICES);
     expect(catalog.expressions).toEqual(DEFAULT_EXPRESSIONS);
-    expect(catalog.voices.some(v => v.id === 'warm' && v.isDefault)).toBe(true);
+    expect(catalog.voices.some(v => v.id === 'af_heart' && v.isDefault)).toBe(true);
   });
 
   it('returns safe fallback chapter audio status when native is unavailable', async () => {
@@ -53,9 +53,8 @@ describe('narrationPipelineService', () => {
 
   describe('custom reference voice methods', () => {
     it('throws or returns safe fallback when native is unavailable', async () => {
-      await expect(narrationPipelineService.pickReferenceAudio()).rejects.toThrow(
-        'Audio picker is not available on this platform.',
-      );
+      const picked = await narrationPipelineService.pickReferenceAudio();
+      expect(picked).toBeNull();
       await expect(
         narrationPipelineService.importCustomVoice('content://dummy', 'My Voice'),
       ).rejects.toThrow('Custom voice import is not available.');

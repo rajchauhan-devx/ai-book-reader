@@ -56,11 +56,11 @@ jest.mock('../src/services/modelDownload', () => ({
 jest.mock('../src/services/narrationEngine', () => ({
   narrationEngineService: {
     getStatus: jest.fn().mockResolvedValue({
-      engine: 'chatterbox-nano',
+      engine: 'kokoro',
       performanceMode: 'balanced',
       loaded: true,
       voiceCount: 5,
-      activeVoiceId: 'warm-1',
+      activeVoiceId: 'af_bella',
       activeExpression: 'natural',
       status: 'idle',
       lastError: null,
@@ -113,7 +113,7 @@ describe('Security Hardening & Threat Prevention', () => {
 
     // Verify sanitized payload contains only non-sensitive app settings
     expect(parsed.appVersion).toBe('1.0.0-beta');
-    expect(parsed.activeNarrationEngine).toBe('chatterbox-nano');
+    expect(parsed.activeNarrationEngine).toBe('kokoro');
     expect(parsed.ttsPerformanceMode).toBe('balanced');
     expect(parsed.voiceModelStatus).toBe('ready');
 

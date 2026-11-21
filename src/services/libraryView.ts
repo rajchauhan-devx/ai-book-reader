@@ -74,11 +74,13 @@ export function getDistinctGenres(books: Book[]): string[] {
 }
 
 export function continueReading(books: Book[]): Book | undefined {
-  return filterBooks(
+  const activelyReading = filterBooks(
     books.filter(book => !!book.parserVersion && !book.isSample),
     '',
     'all',
     'reading',
     'recent',
   )[0];
+  if (activelyReading) return activelyReading;
+  return books.find(book => !!book.parserVersion && !book.isSample) ?? books[0];
 }

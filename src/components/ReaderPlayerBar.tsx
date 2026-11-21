@@ -220,16 +220,14 @@ export function ReaderPlayerBar({
           >
             <Volume2 size={13} color={colors.ink} />
             <Text style={[styles.miniPillText, { color: colors.ink }]}>
-              {playerState.engineMode === 'chatterbox-local' ? 'Chatterbox' : 'Edge'}
+              Kokoro
             </Text>
-            {playerState.engineMode === 'chatterbox-local' && (
-              <View
-                style={[
-                  styles.engineStatusDot,
-                  { backgroundColor: playerState.isModelLoaded ? '#10B981' : '#9CA3AF' },
-                ]}
-              />
-            )}
+            <View
+              style={[
+                styles.engineStatusDot,
+                { backgroundColor: playerState.isModelLoaded ? '#10B981' : '#9CA3AF' },
+              ]}
+            />
           </Pressable>
         </View>
       </View>
