@@ -21,7 +21,6 @@ import {
   LibrarySortMenu,
   librarySortOptions as sorts,
 } from '../components/LibrarySortMenu';
-import { books as samples } from '../data/mockBooks';
 import { useAppTheme } from '../theme/ThemeProvider';
 import { radius, spacing, typography } from '../theme/tokens';
 import type { RootStackParamList } from '../types/navigation';
@@ -30,17 +29,8 @@ import { useLibrary } from '../state/LibraryProvider';
 import {
   filterBooks,
   getDistinctGenres,
-  type LibraryFilter,
   type LibrarySort,
 } from '../services/libraryView';
-
-const filters: { value: LibraryFilter; label: string }[] = [
-  { value: 'all', label: 'All' },
-  { value: 'reading', label: 'Reading' },
-  { value: 'ready', label: 'Audio Ready' },
-  { value: 'finished', label: 'Finished' },
-  { value: 'unread', label: 'Unread' },
-];
 
 export function LibraryScreen() {
   const { colors } = useAppTheme();
@@ -58,14 +48,11 @@ export function LibraryScreen() {
     removeBook,
   } = useLibrary();
   const [query, setQuery] = useState('');
-  const [format, setFormat] = useState<BookFormat | 'all'>('all');
-  const [filter, setFilter] = useState<LibraryFilter>('all');
   const [sort, setSort] = useState<LibrarySort>('recent');
   const [selectedCategory, setSelectedCategory] = useState<string>('Default');
   const [newCategoryModalOpen, setNewCategoryModalOpen] = useState(false);
   const [newCategoryInput, setNewCategoryInput] = useState('');
   const [sortOpen, setSortOpen] = useState(false);
-  const [showSamples, setShowSamples] = useState(false);
   const [selecting, setSelecting] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [removing, setRemoving] = useState(false);
@@ -74,33 +61,32 @@ export function LibraryScreen() {
   const cardWidth = (width - 40 - (columns - 1) * 16) / columns;
 
   const categoryCounts = useMemo(() => {
-    const list = showSamples ? [...books, ...samples] : books;
     const counts: Record<string, number> = {};
     categories.forEach(cat => {
       if (cat.toLowerCase() === 'default') {
-        counts[cat] = list.filter(
+        counts[cat] = books.filter(
           b => !b.genre || b.genre === 'Default' || b.genre === 'Uncategorized',
         ).length;
       } else {
-        counts[cat] = list.filter(
+        counts[cat] = books.filter(
           b => b.genre?.toLowerCase() === cat.toLowerCase(),
         ).length;
       }
     });
     return counts;
-  }, [categories, books, showSamples]);
+  }, [categories, books]);
 
   const visible = useMemo(
     () =>
       filterBooks(
-        showSamples ? [...books, ...samples] : books,
+        books,
         query,
-        format,
-        filter,
+        'all',
+        'all',
         sort,
         selectedCategory,
       ),
-    [books, showSamples, query, format, filter, sort, selectedCategory],
+    [books, query, sort, selectedCategory],
   );
 
   const selectedIds = books
@@ -175,30 +161,6 @@ export function LibraryScreen() {
         },
       ],
       { cancelable: true },
-    );
-  }
-
-  function chip(label: string, chosen: boolean, onPress: () => void) {
-    return (
-      <Pressable
-        key={label}
-        accessibilityRole="button"
-        accessibilityState={{ selected: chosen }}
-        onPress={onPress}
-        style={[
-          styles.chip,
-          {
-            backgroundColor: chosen ? colors.brand : colors.surface,
-            borderColor: colors.border,
-          },
-        ]}
-      >
-        <Text
-          style={[styles.small, { color: chosen ? colors.white : colors.ink }]}
-        >
-          {label}
-        </Text>
-      </Pressable>
     );
   }
 
@@ -428,7 +390,7 @@ export function LibraryScreen() {
                 { backgroundColor: colors.surface, borderColor: colors.border },
               ]}
             >
-              <Search size={20} color={colors.inkMuted} />
+              <Search size={18} color={colors.inkMuted} />
               <TextInput
                 accessibilityLabel="Search books or authors"
                 placeholder="Search title, author or genre"
@@ -438,26 +400,6 @@ export function LibraryScreen() {
                 style={[styles.input, { color: colors.ink }]}
               />
             </View>
-
-            {/* Unified Status Filters */}
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.chips}
-            >
-              {filters.map(item =>
-                chip(item.label, filter === item.value, () =>
-                  setFilter(item.value),
-                ),
-              )}
-              {(['epub', 'pdf', 'txt'] as const).map(value =>
-                chip(
-                  value.toUpperCase(),
-                  format === value,
-                  () => setFormat(format === value ? 'all' : value),
-                ),
-              )}
-            </ScrollView>
 
             {/* Sort & Select Tools */}
             <View style={styles.tools}>
@@ -526,26 +468,31 @@ export function LibraryScreen() {
         )}
         ListEmptyComponent={
           <View style={styles.empty}>
-            <Text style={[styles.subtitle, { color: colors.ink }]}>
+            <Text
+              style={[
+                styles.subtitle,
+                { color: colors.ink, textAlign: 'center' },
+              ]}
+            >
               {loading
                 ? 'Opening your library…'
                 : books.length
                 ? 'No matching books'
-                : 'Your bookshelf is empty'}
+                : 'No books yet'}
             </Text>
-            <Text style={[styles.small, { color: colors.inkMuted }]}>
+            <Text style={[styles.small, { color: colors.inkMuted, textAlign: 'center', maxWidth: 300 }]}>
               {books.length
-                ? 'Change the search or filters to see more books.'
+                ? query.trim()
+                  ? 'No books match your search.'
+                  : 'No books in this category yet.'
                 : 'Import an EPUB, text-based PDF or TXT to build your offline library.'}
             </Text>
             {books.length ? (
               <AppButton
-                label="Clear filters"
+                label={query ? 'Clear search' : 'Switch to Default category'}
                 variant="ghost"
                 onPress={() => {
                   setQuery('');
-                  setFilter('all');
-                  setFormat('all');
                   setSelectedCategory('Default');
                 }}
               />
@@ -557,15 +504,6 @@ export function LibraryScreen() {
               />
             )}
           </View>
-        }
-        ListFooterComponent={
-          <AppButton
-            label={
-              showSamples ? 'Hide design samples' : 'Explore design samples'
-            }
-            variant="ghost"
-            onPress={() => setShowSamples(!showSamples)}
-          />
         }
       />
     </Screen>
@@ -594,16 +532,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     borderWidth: 1,
     borderRadius: radius.md,
+    marginVertical: 4,
   },
-  input: { ...typography.body, flex: 1, minHeight: 46 },
-  chips: { gap: 8 },
-  chip: {
-    paddingHorizontal: 14,
-    minHeight: 36,
-    justifyContent: 'center',
-    borderRadius: radius.pill,
-    borderWidth: 1,
-  },
+  input: { ...typography.body, flex: 1, minHeight: 44 },
   tools: {
     flexDirection: 'row',
     justifyContent: 'space-between',

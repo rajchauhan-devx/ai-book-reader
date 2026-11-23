@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React from 'react';
 import {
   FlatList,
   Pressable,
@@ -10,9 +10,7 @@ import {
 } from 'react-native';
 import {
   BookOpen,
-  ChevronRight,
   Headphones,
-  Library as LibraryIcon,
   Play,
   Plus,
   Sparkles,
@@ -22,12 +20,10 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Screen } from '../components/Screen';
 import { AppButton } from '../components/AppButton';
 import { BookCover } from '../components/BookCover';
-import { VoicePickerModal } from '../components/VoicePickerModal';
 import { useAppTheme } from '../theme/ThemeProvider';
 import { radius, spacing, typography } from '../theme/tokens';
 import type { RootStackParamList } from '../types/navigation';
 import { useLibrary } from '../state/LibraryProvider';
-import { useModelDownload } from '../state/ModelDownloadProvider';
 import { continueReading } from '../services/libraryView';
 
 export function HomeScreen() {
@@ -36,15 +32,45 @@ export function HomeScreen() {
     useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const { width } = useWindowDimensions();
   const { books } = useLibrary();
-  const { status: model } = useModelDownload();
-  const [showVoicePicker, setShowVoicePicker] = useState(false);
+
+  const getGreeting = () => {
+    const hour = new Date().getHours();
+    if (hour >= 5 && hour < 12) return 'Good morning ☀️';
+    if (hour >= 12 && hour < 17) return 'Good afternoon 🌤️';
+    if (hour >= 17 && hour < 22) return 'Good evening 🌙';
+    return 'Quiet night for reading ✨';
+  };
+
+  const getFormattedDate = () => {
+    const d = new Date();
+    const days = [
+      'Sunday',
+      'Monday',
+      'Tuesday',
+      'Wednesday',
+      'Thursday',
+      'Friday',
+      'Saturday',
+    ];
+    const months = [
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec',
+    ];
+    return `${days[d.getDay()]}, ${months[d.getMonth()]} ${d.getDate()}`;
+  };
 
   const currentBook = continueReading(books);
   const totalBooks = books.length;
-  const finishedBooks = books.filter(b => b.progress === 100).length;
-  const inProgressBooks = books.filter(
-    b => b.progress > 0 && b.progress < 100,
-  ).length;
 
   const recentBooks = books
     .filter(b => b.lastOpenedAt)
@@ -52,7 +78,7 @@ export function HomeScreen() {
       (a, b) =>
         Date.parse(b.lastOpenedAt ?? '') - Date.parse(a.lastOpenedAt ?? ''),
     )
-    .slice(0, 6);
+    .slice(0, 8);
 
   const heroWidth = Math.min(width - 32, 540);
 
@@ -62,17 +88,32 @@ export function HomeScreen() {
         contentContainerStyle={styles.content}
         showsVerticalScrollIndicator={false}
       >
-        {/* Header */}
+        {/* Header with Greeting & Date */}
         <View style={styles.header}>
-          <Text style={[styles.eyebrow, { color: colors.brand }]}>
-            YOUR AUDIOBOOK COMPANION
-          </Text>
+          <View style={styles.headerTopRow}>
+            <Text style={[styles.eyebrow, { color: colors.brand }]}>
+              {getGreeting()}
+            </Text>
+            <View
+              style={[
+                styles.datePill,
+                {
+                  backgroundColor: colors.surfaceMuted,
+                  borderColor: colors.border,
+                },
+              ]}
+            >
+              <Text style={[styles.dateText, { color: colors.inkMuted }]}>
+                {getFormattedDate()}
+              </Text>
+            </View>
+          </View>
           <Text style={[styles.title, { color: colors.ink }]}>
             AI Book Reader
           </Text>
         </View>
 
-        {/* Hero Card: Continue Reading */}
+        {/* Hero Section */}
         {currentBook ? (
           <View
             style={[
@@ -216,167 +257,78 @@ export function HomeScreen() {
               },
             ]}
           >
-            <BookOpen size={36} color={colors.brand} />
-            <Text style={[styles.emptyCardTitle, { color: colors.ink }]}>
-              {totalBooks === 0 ? 'Welcome to AI Book Reader' : 'Pick up a book'}
-            </Text>
-            <Text style={[styles.emptyCardBody, { color: colors.inkMuted }]}>
-              {totalBooks === 0
-                ? 'Import an EPUB, PDF or TXT to start listening with natural offline voices.'
-                : 'Choose any book from your library to start listening.'}
-            </Text>
-            <AppButton
-              label={totalBooks === 0 ? 'Import your first book' : 'Open library'}
-              onPress={() =>
-                totalBooks === 0
-                  ? navigation.navigate('ImportBook')
-                  : navigation.navigate('MainTabs', { screen: 'Library' })
-              }
-              style={styles.emptyCardAction}
-            />
-          </View>
-        )}
-
-        {/* Offline Voice Engine Status */}
-        {model.state === 'ready' ? (
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Natural voice model status"
-            onPress={() => navigation.navigate('ModelSetup')}
-            style={[
-              styles.voiceStatusPill,
-              { backgroundColor: colors.surface, borderColor: colors.border },
-            ]}
-          >
-            <View style={styles.voicePillLeft}>
-              <View style={[styles.voiceStatusDot, { backgroundColor: '#10B981' }]} />
-              <Sparkles size={16} color={colors.listen} />
-              <Text style={[styles.voiceStatusText, { color: colors.ink }]}>
-                Narrator: Heart (Kokoro-82M Offline)
-              </Text>
-            </View>
-            <Text style={[styles.voiceChangeLink, { color: colors.brand }]}>
-              Change
-            </Text>
-          </Pressable>
-        ) : (
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Natural voice model status"
-            onPress={() => navigation.navigate('ModelSetup')}
-            style={[styles.modelCard, { backgroundColor: colors.brand }]}
-          >
-            <Sparkles size={24} color="#F5E5C7" />
-            <View style={styles.flex}>
-              <Text style={styles.modelTitle}>
-                Natural Offline Voice · Free
-              </Text>
-              <Text style={styles.modelBody}>
-                One-time setup for patient, human-like narration without internet.
-              </Text>
-            </View>
-            <ChevronRight size={20} color="#F5E5C7" />
-          </Pressable>
-        )}
-
-        {/* Quick Actions */}
-        <View style={styles.quickActionsRow}>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Import a book"
-            onPress={() => navigation.navigate('ImportBook')}
-            style={[
-              styles.actionTile,
-              { backgroundColor: colors.surface, borderColor: colors.border },
-            ]}
-          >
             <View
               style={[
-                styles.actionIconWrap,
+                styles.emptyIconCircle,
                 { backgroundColor: colors.brandSoft },
               ]}
             >
-              <Plus size={22} color={colors.brand} />
+              <Sparkles size={28} color={colors.brand} />
             </View>
-            <Text style={[styles.actionLabel, { color: colors.ink }]}>
-              Import Book
+            <Text style={[styles.emptyCardTitle, { color: colors.ink }]}>
+              Welcome to AI Book Reader
             </Text>
-            <Text style={[styles.actionSub, { color: colors.inkMuted }]}>
-              EPUB, PDF, TXT
+            <Text style={[styles.emptyCardBody, { color: colors.inkMuted }]}>
+              Turn your books into natural, human-like audiobooks with
+              Kokoro-82M AI. 100% offline with zero data consumption.
             </Text>
-          </Pressable>
-
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Go to library"
-            onPress={() =>
-              navigation.navigate('MainTabs', { screen: 'Library' })
-            }
-            style={[
-              styles.actionTile,
-              { backgroundColor: colors.surface, borderColor: colors.border },
-            ]}
-          >
-            <View
-              style={[
-                styles.actionIconWrap,
-                { backgroundColor: colors.listenSoft },
-              ]}
-            >
-              <LibraryIcon size={22} color={colors.listen} />
-            </View>
-            <Text style={[styles.actionLabel, { color: colors.ink }]}>
-              Library
-            </Text>
-            <Text style={[styles.actionSub, { color: colors.inkMuted }]}>
-              {totalBooks} {totalBooks === 1 ? 'book' : 'books'}
-            </Text>
-          </Pressable>
-        </View>
-
-        {/* Reading Stats Card */}
-        {totalBooks > 0 ? (
-          <View
-            style={[
-              styles.statsCard,
-              { backgroundColor: colors.surface, borderColor: colors.border },
-            ]}
-          >
-            <Text style={[styles.statsTitle, { color: colors.ink }]}>
-              Reading Overview
-            </Text>
-            <View style={styles.statsRow}>
-              <View style={styles.statItem}>
-                <Text style={[styles.statValue, { color: colors.brand }]}>
-                  {totalBooks}
-                </Text>
-                <Text style={[styles.statLabel, { color: colors.inkMuted }]}>
-                  Total books
+            <AppButton
+              label="Import your first book"
+              icon={Plus}
+              onPress={() => navigation.navigate('ImportBook')}
+              style={styles.emptyCardAction}
+            />
+            <View style={styles.formatTagRow}>
+              <View
+                style={[
+                  styles.formatTag,
+                  {
+                    backgroundColor: colors.surfaceMuted,
+                    borderColor: colors.border,
+                  },
+                ]}
+              >
+                <Text
+                  style={[styles.formatTagText, { color: colors.inkMuted }]}
+                >
+                  EPUB · Chapters
                 </Text>
               </View>
-              <View style={[styles.statDivider, { backgroundColor: colors.border }]} />
-              <View style={styles.statItem}>
-                <Text style={[styles.statValue, { color: colors.listen }]}>
-                  {inProgressBooks}
-                </Text>
-                <Text style={[styles.statLabel, { color: colors.inkMuted }]}>
-                  In progress
+              <View
+                style={[
+                  styles.formatTag,
+                  {
+                    backgroundColor: colors.surfaceMuted,
+                    borderColor: colors.border,
+                  },
+                ]}
+              >
+                <Text
+                  style={[styles.formatTagText, { color: colors.inkMuted }]}
+                >
+                  PDF · Documents
                 </Text>
               </View>
-              <View style={[styles.statDivider, { backgroundColor: colors.border }]} />
-              <View style={styles.statItem}>
-                <Text style={[styles.statValue, { color: colors.success }]}>
-                  {finishedBooks}
-                </Text>
-                <Text style={[styles.statLabel, { color: colors.inkMuted }]}>
-                  Finished
+              <View
+                style={[
+                  styles.formatTag,
+                  {
+                    backgroundColor: colors.surfaceMuted,
+                    borderColor: colors.border,
+                  },
+                ]}
+              >
+                <Text
+                  style={[styles.formatTagText, { color: colors.inkMuted }]}
+                >
+                  TXT · Clean text
                 </Text>
               </View>
             </View>
           </View>
-        ) : null}
+        )}
 
-        {/* Recently Read Carousel */}
+        {/* Recently Read Carousel (Shown when user has recent books) */}
         {recentBooks.length > 0 ? (
           <View style={styles.recentSection}>
             <View style={styles.recentHeader}>
@@ -446,42 +398,11 @@ export function HomeScreen() {
           </View>
         ) : null}
       </ScrollView>
-      <VoicePickerModal
-        visible={showVoicePicker}
-        onClose={() => setShowVoicePicker(false)}
-      />
     </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  voiceStatusPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: spacing.md,
-    paddingVertical: 10,
-    borderRadius: radius.pill,
-    borderWidth: 1,
-  },
-  voicePillLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  voiceStatusDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-  },
-  voiceStatusText: {
-    fontSize: 13,
-    fontWeight: '600',
-  },
-  voiceChangeLink: {
-    fontSize: 12,
-    fontWeight: '700',
-  },
   content: {
     padding: spacing.md,
     paddingBottom: 110,
@@ -490,10 +411,26 @@ const styles = StyleSheet.create({
   header: {
     marginTop: spacing.xs,
   },
+  headerTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 2,
+  },
   eyebrow: {
     ...typography.small,
     fontWeight: '800' as const,
-    letterSpacing: 1.1,
+    letterSpacing: 0.8,
+  },
+  datePill: {
+    paddingHorizontal: 10,
+    paddingVertical: 3,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+  },
+  dateText: {
+    fontSize: 11,
+    fontWeight: '600',
   },
   title: {
     ...typography.pageTitle,
@@ -599,100 +536,45 @@ const styles = StyleSheet.create({
     alignSelf: 'center',
     gap: spacing.xs,
   },
+  emptyIconCircle: {
+    width: 54,
+    height: 54,
+    borderRadius: 27,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: spacing.xs,
+  },
   emptyCardTitle: {
     ...typography.sectionTitle,
-    marginTop: spacing.xs,
+    textAlign: 'center',
   },
   emptyCardBody: {
     ...typography.body,
     fontSize: 13,
     textAlign: 'center',
     maxWidth: 320,
+    lineHeight: 19,
   },
   emptyCardAction: {
     marginTop: spacing.md,
-    minWidth: 200,
+    minWidth: 220,
   },
-  modelCard: {
+  formatTagRow: {
     flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.md,
-    padding: spacing.md,
-    borderRadius: radius.lg,
-  },
-  modelTitle: {
-    ...typography.label,
-    color: '#FBF7EE',
-    fontSize: 15,
-  },
-  modelBody: {
-    ...typography.small,
-    color: '#EDE3D2',
-    marginTop: 2,
-    fontSize: 12,
-  },
-  quickActionsRow: {
-    flexDirection: 'row',
-    gap: spacing.sm,
-  },
-  actionTile: {
-    flex: 1,
-    padding: spacing.md,
-    borderRadius: radius.lg,
-    borderWidth: 1,
-    alignItems: 'flex-start',
-    gap: 4,
-  },
-  actionIconWrap: {
-    width: 44,
-    height: 44,
-    borderRadius: 14,
-    alignItems: 'center',
+    gap: spacing.xs,
+    marginTop: spacing.md,
+    flexWrap: 'wrap',
     justifyContent: 'center',
-    marginBottom: spacing.xs,
   },
-  actionLabel: {
-    ...typography.label,
-    fontSize: 14,
-  },
-  actionSub: {
-    ...typography.small,
-    fontSize: 12,
-  },
-  statsCard: {
-    padding: spacing.md,
-    borderRadius: radius.lg,
+  formatTag: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: radius.pill,
     borderWidth: 1,
-    gap: spacing.sm,
   },
-  statsTitle: {
-    ...typography.label,
-    fontSize: 13,
-    letterSpacing: 0.5,
-    textTransform: 'uppercase',
-  },
-  statsRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-around',
-    paddingVertical: spacing.xs,
-  },
-  statItem: {
-    alignItems: 'center',
-    flex: 1,
-  },
-  statValue: {
-    fontSize: 22,
-    fontWeight: '800',
-  },
-  statLabel: {
-    ...typography.small,
+  formatTagText: {
     fontSize: 11,
-    marginTop: 2,
-  },
-  statDivider: {
-    width: 1,
-    height: 28,
+    fontWeight: '600',
   },
   recentSection: {
     gap: spacing.sm,
@@ -736,8 +618,5 @@ const styles = StyleSheet.create({
   recentProgress: {
     height: '100%',
     borderRadius: radius.pill,
-  },
-  flex: {
-    flex: 1,
   },
 });

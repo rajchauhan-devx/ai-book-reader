@@ -116,46 +116,25 @@ describe('HomeScreen', () => {
     });
   });
 
-  test('navigates to ModelSetup when model banner is pressed', () => {
+  test('renders Recently Read section and navigates to BookDetails on press', () => {
     let renderer!: TestRenderer.ReactTestRenderer;
     act(() => {
       renderer = TestRenderer.create(<HomeScreen />);
     });
 
-    const modelCard = renderer.root.findByProps({
-      accessibilityLabel: 'Natural voice model status',
+    const recentItem = renderer.root.findByProps({
+      accessibilityLabel: 'Dune by Frank Herbert',
     });
     act(() => {
-      modelCard.props.onPress();
+      recentItem.props.onPress();
     });
 
-    expect(mockNavigate).toHaveBeenCalledWith('ModelSetup');
+    expect(mockNavigate).toHaveBeenCalledWith('BookDetails', {
+      bookId: 'book-reading',
+    });
   });
 
-  test('renders quick action buttons for Import Book and Library', () => {
-    let renderer!: TestRenderer.ReactTestRenderer;
-    act(() => {
-      renderer = TestRenderer.create(<HomeScreen />);
-    });
-
-    const importAction = renderer.root.findByProps({
-      accessibilityLabel: 'Import a book',
-    });
-    act(() => {
-      importAction.props.onPress();
-    });
-    expect(mockNavigate).toHaveBeenCalledWith('ImportBook');
-
-    const libraryAction = renderer.root.findByProps({
-      accessibilityLabel: 'Go to library',
-    });
-    act(() => {
-      libraryAction.props.onPress();
-    });
-    expect(mockNavigate).toHaveBeenCalledWith('MainTabs', { screen: 'Library' });
-  });
-
-  test('shows empty state card when there are no books currently being read', () => {
+  test('shows empty state Welcome card when there are no books and navigates to ImportBook', () => {
     mockCurrentBooks = [];
     let renderer!: TestRenderer.ReactTestRenderer;
     act(() => {
@@ -166,5 +145,14 @@ describe('HomeScreen', () => {
     const texts = textNodes.map(node => node.props.children).flat().filter(Boolean);
 
     expect(texts).toContain('Welcome to AI Book Reader');
+
+    const importBtn = renderer.root.findByProps({
+      label: 'Import your first book',
+    });
+    act(() => {
+      importBtn.props.onPress();
+    });
+
+    expect(mockNavigate).toHaveBeenCalledWith('ImportBook');
   });
 });

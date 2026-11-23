@@ -461,19 +461,26 @@ export function VoicePickerModal({
               styles.sheetFooter,
               {backgroundColor: colors.surface, borderTopColor: colors.border},
             ]}>
-            <AppButton
-              label={
-                isTesting
-                  ? `Testing ${activeVoiceFirstName}…`
-                  : `Test ${currentVoiceFirstName} Voice`
-              }
-              icon={isTesting ? undefined : Play}
-              variant="secondary"
-              disabled={isTesting}
-              loading={isTesting}
-              onPress={() => handlePreview(selectedVoiceId)}
-            />
-            <AppButton label="Done" fullWidth onPress={onClose} />
+            <View style={styles.footerActionRow}>
+              <View style={styles.footerBtnTest}>
+                <AppButton
+                  label={
+                    isTesting
+                      ? `Testing ${activeVoiceFirstName}…`
+                      : `Test ${currentVoiceFirstName} Voice`
+                  }
+                  icon={isTesting ? undefined : Play}
+                  variant="secondary"
+                  disabled={isTesting}
+                  loading={isTesting}
+                  fullWidth
+                  onPress={() => handlePreview(selectedVoiceId)}
+                />
+              </View>
+              <View style={styles.footerBtnDone}>
+                <AppButton label="Done" fullWidth onPress={onClose} />
+              </View>
+            </View>
           </View>
         </View>
       </View>
@@ -709,11 +716,21 @@ const styles = StyleSheet.create({
     height: spacing.md,
   },
   sheetFooter: {
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.md,
+    paddingTop: spacing.sm,
+    paddingBottom: spacing.lg + spacing.xs,
     borderTopWidth: 1,
+  },
+  footerActionRow: {
     flexDirection: 'row',
+    alignItems: 'center',
     gap: spacing.sm,
+  },
+  footerBtnTest: {
+    flex: 1.3,
+  },
+  footerBtnDone: {
+    flex: 0.9,
   },
   flex: {
     flex: 1,
