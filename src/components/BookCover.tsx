@@ -15,10 +15,13 @@ export function BookCover({ book, width = 132, height = 190 }: Props) {
 
   const renderSpineEffects = () => (
     <>
-      {/* Book spine highlight and fold crease */}
+      {/* Book spine lighting & 3D crease effects */}
+      <View style={styles.spineOuterEdge} pointerEvents="none" />
       <View style={styles.spineHighlight} pointerEvents="none" />
-      <View style={styles.spineShadow} pointerEvents="none" />
+      <View style={styles.spineCrease} pointerEvents="none" />
       <View style={styles.spineSheen} pointerEvents="none" />
+      {/* Right side page edge highlight */}
+      <View style={styles.rightPageRim} pointerEvents="none" />
     </>
   );
 
@@ -72,45 +75,61 @@ export function BookCover({ book, width = 132, height = 190 }: Props) {
 
 const styles = StyleSheet.create({
   container: {
-    borderRadius: 8,
+    borderRadius: 9,
     overflow: 'hidden',
     position: 'relative',
     shadowColor: '#000000',
-    shadowOffset: { width: 2, height: 6 },
-    shadowOpacity: 0.22,
-    shadowRadius: 10,
-    elevation: 6,
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.35,
+    shadowRadius: 14,
+    elevation: 8,
   },
   image: {
-    borderRadius: 8,
+    borderRadius: 9,
   },
   fallbackCover: {
     padding: spacing.md,
     justifyContent: 'space-between',
   },
-  spineHighlight: {
+  spineOuterEdge: {
     position: 'absolute',
     left: 0,
     top: 0,
     bottom: 0,
-    width: 4,
-    backgroundColor: 'rgba(255, 255, 255, 0.24)',
+    width: 3,
+    backgroundColor: 'rgba(0, 0, 0, 0.40)',
   },
-  spineShadow: {
+  spineHighlight: {
     position: 'absolute',
-    left: 4,
+    left: 3,
     top: 0,
     bottom: 0,
     width: 3,
-    backgroundColor: 'rgba(0, 0, 0, 0.20)',
+    backgroundColor: 'rgba(255, 255, 255, 0.28)',
   },
-  spineSheen: {
+  spineCrease: {
     position: 'absolute',
-    left: 7,
+    left: 6,
     top: 0,
     bottom: 0,
     width: 2,
-    backgroundColor: 'rgba(255, 255, 255, 0.10)',
+    backgroundColor: 'rgba(0, 0, 0, 0.22)',
+  },
+  spineSheen: {
+    position: 'absolute',
+    left: 8,
+    top: 0,
+    bottom: 0,
+    width: 6,
+    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+  },
+  rightPageRim: {
+    position: 'absolute',
+    right: 0,
+    top: 0,
+    bottom: 0,
+    width: 1.5,
+    backgroundColor: 'rgba(255, 255, 255, 0.25)',
   },
   rule: { width: 28, height: 3, borderRadius: 3 },
   mark: {
@@ -122,6 +141,6 @@ const styles = StyleSheet.create({
     opacity: 0.14,
   },
   copy: { gap: 6 },
-  title: { color: '#FFFFFF', fontSize: 15, lineHeight: 18, fontWeight: '700' },
-  author: { color: 'rgba(255,255,255,0.74)', fontSize: 10, lineHeight: 13 },
+  title: { color: '#FFFFFF', fontSize: 15, lineHeight: 19, fontWeight: '700' },
+  author: { color: 'rgba(255,255,255,0.78)', fontSize: 11, lineHeight: 14 },
 });

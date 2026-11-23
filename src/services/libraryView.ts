@@ -33,7 +33,13 @@ export function filterBooks(
             .toLocaleLowerCase()
             .includes(search)) &&
         (format === 'all' || book.format === format) &&
-        (genre === 'all' || (book.genre ?? 'Uncategorized') === genre) &&
+        (genre === 'all' ||
+          (genre.toLowerCase() === 'default'
+            ? (!book.genre ||
+                book.genre === 'Default' ||
+                book.genre === 'Uncategorized')
+            : (book.genre ?? 'Uncategorized').toLowerCase() ===
+              genre.toLowerCase())) &&
         (filter === 'all' ||
           (filter === 'ready' && !!book.parserVersion) ||
           (filter === 'preparing' &&

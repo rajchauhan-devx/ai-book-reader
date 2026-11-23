@@ -14,7 +14,6 @@ internal class DocumentBuilder(private val identity: String, private val check: 
   private var blockCount = 0
   private var sentenceCount = 0
   private val whitespace = Regex("[\\s\\p{Z}]+")
-  private val iterator = BreakIterator.getSentenceInstance(Locale.ROOT)
 
   private var pendingText: String? = null
   private var pendingAnchor: String = ""
@@ -58,21 +57,18 @@ internal class DocumentBuilder(private val identity: String, private val check: 
     if (characters > 4_000_000 || ++blockCount > 20_000 || raw.length > 16_384) {
       throw PreparationFailure("BOOK_PARSER_LIMIT", "This book exceeds the text safety limit. Try a smaller or simpler edition.")
     }
-    iterator.setText(raw)
+    val sentenceSpans = com.aireader.narration.TextNormalizer.splitSentences(raw)
     val sentences = mutableListOf<ParsedSentence>()
-    var start = iterator.first()
-    var end = iterator.next()
-    while (end != BreakIterator.DONE) {
+    for (span in sentenceSpans) {
       check()
-      val original = raw.substring(start, end)
+      val original = span.text
       val nfc = Normalizer.normalize(original, Normalizer.Form.NFC).replace(whitespace, " ").trim()
       val normalized = com.aireader.narration.TextNormalizer.fixLigatureSplits(nfc)
       if (normalized.isNotEmpty()) {
         if (++sentenceCount > 100_000) throw PreparationFailure("BOOK_PARSER_LIMIT", "This book has more than 100,000 sentences.")
-        val location = "$anchor:utf16:$start-$end"
+        val location = "$anchor:utf16:${span.start}-${span.end}"
         sentences.add(ParsedSentence(contentId(identity, "sentence", location, original), original, normalized, location, textHash(normalized)))
       }
-      start = end; end = iterator.next()
     }
     blocks.add(ParsedBlock(contentId(identity, kind, anchor, raw), kind, raw, anchor, textHash(raw), sentences))
   }
@@ -89,8 +85,9 @@ internal class DocumentBuilder(private val identity: String, private val check: 
     if (firstChar.isLowerCase()) return true
     if (firstChar in setOf(',', ';', ':', ')', ']', '}', '»')) return true
 
-    val endsWithTerm = p.endsWith(".") || p.endsWith("!") || p.endsWith("?") ||
-                       p.endsWith("\"") || p.endsWith("”") || p.endsWith("’") || p.endsWith("»")
+    val endsWithTerm = (p.endsWith(".") || p.endsWith("!") || p.endsWith("?") ||
+                       p.endsWith("\"") || p.endsWith("”") || p.endsWith("’") || p.endsWith("»")) &&
+                       !com.aireader.narration.TextNormalizer.isAbbreviationOrInitial(p)
     if (!endsWithTerm) {
       val isDialogStart = firstChar in setOf('"', '“', '‘', '\'')
       if (!isDialogStart) {
@@ -105,7 +102,7 @@ internal class DocumentBuilder(private val identity: String, private val check: 
         if (lastWord in danglingWords || p.endsWith(",") || p.endsWith(";") || p.endsWith(":")) {
           return true
         }
-        if (p.last().isLetterOrDigit()) {
+        if (p.last().isLetterOrDigit() || com.aireader.narration.TextNormalizer.isAbbreviationOrInitial(p)) {
           return true
         }
       }

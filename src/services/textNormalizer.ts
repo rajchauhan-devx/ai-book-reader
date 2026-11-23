@@ -73,7 +73,16 @@ const ABBREVIATIONS: [RegExp, string][] = [
   [/\bCol\.(?=\s|$)/gi, 'Colonel'],
   [/\bGen\.(?=\s|$)/gi, 'General'],
   [/\bLt\.(?=\s|$)/gi, 'Lieutenant'],
+  [/\bLieut\.(?=\s|$)/gi, 'Lieutenant'],
   [/\bSgt\.(?=\s|$)/gi, 'Sergeant'],
+  [/\bMaj\.(?=\s|$)/gi, 'Major'],
+  [/\bCmdr\.(?=\s|$)/gi, 'Commander'],
+  [/\bGov\.(?=\s|$)/gi, 'Governor'],
+  [/\bSen\.(?=\s|$)/gi, 'Senator'],
+  [/\bRep\.(?=\s|$)/gi, 'Representative'],
+  [/\bHon\.(?=\s|$)/gi, 'Honorable'],
+  [/\bPres\.(?=\s|$)/gi, 'President'],
+  [/\bFr\.(?=\s|$)/gi, 'Father'],
   [/\bRev\.(?=\s|$)/gi, 'Reverend'],
   [/\bJr\.(?=\s|[.,]|$)/gi, 'Junior'],
   [/\bSr\.(?=\s|[.,]|$)/gi, 'Senior'],
@@ -83,6 +92,7 @@ const ABBREVIATIONS: [RegExp, string][] = [
   [/\bsec\.\s*(\d+)/gi, 'section $1'],
   [/\bpp\.\s*(\d+)/gi, 'pages $1'],
   [/\bp\.\s*(\d+)/gi, 'page $1'],
+  [/\bno\.\s*(\d+)/gi, 'number $1'],
   [/\bvs\.(?=\s|$)/gi, 'versus'],
   [/\betc\.(?=[,;])/gi, 'etcetera'],
   [/\betc\./gi, 'etcetera.'],
@@ -91,6 +101,45 @@ const ABBREVIATIONS: [RegExp, string][] = [
   [/\bapprox\.(?=\s|$)/gi, 'approximately'],
   [/\bdept\.(?=\s|$)/gi, 'department'],
 ];
+
+export const ABBREVIATIONS_SET = new Set([
+  'mr', 'mrs', 'ms', 'miss', 'dr', 'prof', 'capt', 'col', 'gen',
+  'lt', 'lieut', 'sgt', 'maj', 'cmdr', 'adm', 'gov', 'sen', 'rep',
+  'rev', 'fr', 'sr', 'jr', 'st', 'hon', 'pres', 'vs', 'v', 'etc',
+  'eg', 'ie', 'viz', 'al', 'approx', 'ca', 'cf', 'vol', 'vols',
+  'chap', 'ch', 'sec', 'no', 'nos', 'p', 'pp', 'ed', 'eds', 'fig',
+  'figs', 'art', 'bk', 'bks', 'op', 'cit', 'ibid', 'loc', 'est', 'dept',
+]);
+
+export function fixUnspacedTitles(text: string): string {
+  if (!text) return '';
+  return text.replace(
+    /\b(Mr|Mrs|Ms|Miss|Dr|Prof|Capt|Col|Gen|Lt|Lieut|Sgt|Maj|Cmdr|Adm|Gov|Sen|Rep|Rev|Fr|Sr|Jr|St|vs|etc|approx|vol|chap|ch|sec|pp|p|no)\.([A-Za-z])/gi,
+    (_, title, nextChar) => {
+      const formattedTitle = title.charAt(0).toUpperCase() + title.slice(1).toLowerCase();
+      const formattedNext = nextChar.toUpperCase();
+      return `${formattedTitle}. ${formattedNext}`;
+    },
+  );
+}
+
+export function isAbbreviationOrInitial(text: string | null | undefined): boolean {
+  if (!text) return false;
+  const trimmed = text.trim();
+  const cleaned = trimmed.replace(/[”"’'»\)\],;:]+$/, '').trim();
+  if (!cleaned.endsWith('.')) return false;
+
+  const lastWord = (cleaned.split(/\s+/).pop() || '')
+    .toLowerCase()
+    .replace(/\.$/, '');
+
+  if (!lastWord) return false;
+  if (lastWord.length === 1 && /[a-z]/i.test(lastWord)) return true;
+  if (/^[a-z](\.[a-z])+$/.test(lastWord)) return true;
+  if (ABBREVIATIONS_SET.has(lastWord)) return true;
+
+  return false;
+}
 
 /**
  * Converts a positive integer (< 1,000,000,000) to English words.
@@ -238,9 +287,12 @@ function normalizeNumbersAndCurrencies(text: string): string {
 export function normalizeNarrationText(text: string): string {
   if (!text || typeof text !== 'string') return '';
 
+  // Fix unspaced titles like "mr.raj" -> "Mr. Raj"
+  let normalized = fixUnspacedTitles(text);
+
   // Strip null bytes and non-printable control characters
   // eslint-disable-next-line no-control-regex
-  let normalized = text.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, ' ').trim();
+  normalized = normalized.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, ' ').trim();
   if (!normalized) return '';
 
   // Expand abbreviations
@@ -272,7 +324,7 @@ export function normalizeNarrationText(text: string): string {
 
 export function fixLigatureSplits(rawText: string): string {
   if (!rawText) return '';
-  let text = rawText;
+  let text = fixUnspacedTitles(rawText);
 
   // Strip soft hyphens and invisible zero-width markers
   text = text.replace(/\u00AD/g, '')

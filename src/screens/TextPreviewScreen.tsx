@@ -12,7 +12,7 @@ import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { Screen } from '../components/Screen';
 import { AppButton } from '../components/AppButton';
 import { bookLibraryService } from '../services/bookLibrary';
-import { fixLigatureSplits } from '../services/textNormalizer';
+import { fixLigatureSplits, isAbbreviationOrInitial } from '../services/textNormalizer';
 import { useLibrary } from '../state/LibraryProvider';
 import { useAppTheme } from '../theme/ThemeProvider';
 import { radius, spacing, typography } from '../theme/tokens';
@@ -131,7 +131,7 @@ function BookTextPreview({ bookId }: { bookId: string }) {
       if (firstChar >= 'a' && firstChar <= 'z') return true;
       if (/^[,;:\]\)}»—]/.test(c)) return true;
 
-      const endsWithTerm = /[.!?”"’»]$/.test(p);
+      const endsWithTerm = /[.!?”"’»]$/.test(p) && !isAbbreviationOrInitial(p);
       if (!endsWithTerm) {
         if (!/^[“"‘']/.test(c)) {
           const lastWord = (p.split(/\s+/).pop() || '').toLowerCase();
@@ -143,7 +143,7 @@ function BookTextPreview({ bookId }: { bookId: string }) {
             'my', 'his', 'her', 'their', 'our', 'your', 'its', 'like', 'not', 'too',
           ]);
           if (danglingWords.has(lastWord) || /[,;:]$/.test(p)) return true;
-          if (/[a-zA-Z0-9]$/.test(p)) return true;
+          if (/[a-zA-Z0-9]$/.test(p) || isAbbreviationOrInitial(p)) return true;
         }
       }
       return false;

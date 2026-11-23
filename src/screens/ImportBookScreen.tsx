@@ -1,10 +1,21 @@
 import React, { useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import {
+  Alert,
+  Modal,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from 'react-native';
 import {
   AlertCircle,
   BookOpen,
+  Check,
   CheckCircle2,
   FileText,
+  FolderPlus,
   LockKeyhole,
   Plus,
   ScanText,
@@ -13,6 +24,7 @@ import {
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../types/navigation';
+import type { BookSelection } from '../types/library';
 import { Screen } from '../components/Screen';
 import { AppButton } from '../components/AppButton';
 import { useAppTheme } from '../theme/ThemeProvider';
@@ -31,16 +43,27 @@ export function ImportBookScreen() {
   const navigation =
     useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const [importedId, setImportedId] = useState<string>();
-  const [selectedGenre, setSelectedGenre] = useState<string>('Uncategorized');
+  const [targetCategory, setTargetCategory] = useState<string>('Default');
+  const [categoryModalVisible, setCategoryModalVisible] = useState(false);
+  const [pendingSelection, setPendingSelection] =
+    useState<BookSelection | null>(null);
+  const [newCatName, setNewCatName] = useState('');
+  const [showCreateInput, setShowCreateInput] = useState(false);
+
   const {
     error,
     books,
+    categories,
+    addCategory,
     selectedBook,
     importProgress,
-    chooseAndImportBook,
+    chooseBookSelection,
+    importBookSelection,
     cancelImport,
+    clearImportResult,
     updateBookMetadata,
   } = useLibrary();
+
   const busy =
     importProgress.phase === 'choosing' ||
     importProgress.phase === 'copying' ||
@@ -55,8 +78,226 @@ export function ImportBookScreen() {
   const knownProgress =
     importProgress.totalBytes > 0 || importProgress.phase === 'checking';
 
+  const handleChooseFile = async () => {
+    setImportedId(undefined);
+    const selection = await chooseBookSelection();
+    if (selection) {
+      setPendingSelection(selection);
+      setTargetCategory('Default');
+      setShowCreateInput(false);
+      setNewCatName('');
+      setCategoryModalVisible(true);
+    }
+  };
+
+  const handleConfirmCategoryAndImport = async () => {
+    if (!pendingSelection) return;
+    const cat = targetCategory.trim() || 'Default';
+    setCategoryModalVisible(false);
+    const book = await importBookSelection(pendingSelection, cat);
+    setImportedId(book?.id);
+    setPendingSelection(null);
+  };
+
+  const handleCancelCategoryModal = () => {
+    setCategoryModalVisible(false);
+    setPendingSelection(null);
+    clearImportResult();
+  };
+
+  const handleCreateCategory = async () => {
+    const trimmed = newCatName.trim();
+    if (trimmed) {
+      await addCategory(trimmed);
+      setTargetCategory(trimmed);
+      setNewCatName('');
+      setShowCreateInput(false);
+    }
+  };
+
   return (
     <Screen contentStyle={styles.content}>
+      {/* Aniyomi-Style Category Selection Modal */}
+      <Modal
+        visible={categoryModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={handleCancelCategoryModal}
+      >
+        <Pressable
+          style={styles.modalOverlay}
+          onPress={handleCancelCategoryModal}
+        >
+          <Pressable
+            style={[
+              styles.categoryModalCard,
+              { backgroundColor: colors.surface, borderColor: colors.border },
+            ]}
+            onPress={e => e.stopPropagation()}
+          >
+            <View style={styles.modalHeaderRow}>
+              <View
+                style={[
+                  styles.modalHeaderIcon,
+                  { backgroundColor: colors.brandSoft },
+                ]}
+              >
+                <FolderPlus size={20} color={colors.brand} />
+              </View>
+              <View style={styles.flex}>
+                <Text style={[styles.modalTitle, { color: colors.ink }]}>
+                  Add to Category
+                </Text>
+              </View>
+            </View>
+
+            {pendingSelection?.name ? (
+              <View
+                style={[
+                  styles.bookNameBadge,
+                  { backgroundColor: colors.surfaceMuted },
+                ]}
+              >
+                <Text
+                  style={[styles.bookNameText, { color: colors.inkMuted }]}
+                  numberOfLines={2}
+                >
+                  {pendingSelection.name}
+                </Text>
+              </View>
+            ) : null}
+
+            <Text
+              style={[
+                styles.categoryPrompt,
+                { color: colors.ink, marginTop: spacing.xs },
+              ]}
+            >
+              Select category for this book:
+            </Text>
+
+            <ScrollView
+              style={styles.categoryListScroll}
+              showsVerticalScrollIndicator={false}
+            >
+              {categories.map(cat => {
+                const isSelected = targetCategory === cat;
+                return (
+                  <Pressable
+                    key={cat}
+                    accessibilityRole="radio"
+                    accessibilityState={{ selected: isSelected }}
+                    onPress={() => setTargetCategory(cat)}
+                    style={[
+                      styles.categoryOptionRow,
+                      {
+                        backgroundColor: isSelected
+                          ? colors.brandSoft
+                          : 'transparent',
+                      },
+                    ]}
+                  >
+                    <View
+                      style={[
+                        styles.radioCircle,
+                        {
+                          borderColor: isSelected ? colors.brand : colors.border,
+                          backgroundColor: isSelected
+                            ? colors.brand
+                            : 'transparent',
+                        },
+                      ]}
+                    >
+                      {isSelected ? (
+                        <Check size={12} color={colors.white} strokeWidth={3} />
+                      ) : null}
+                    </View>
+                    <Text
+                      style={[
+                        styles.categoryOptionText,
+                        {
+                          color: isSelected ? colors.brand : colors.ink,
+                          fontWeight: isSelected ? '700' : '500',
+                        },
+                      ]}
+                    >
+                      {cat}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </ScrollView>
+
+            {showCreateInput ? (
+              <View style={styles.createCategoryInputRow}>
+                <TextInput
+                  autoFocus
+                  placeholder="Category name…"
+                  placeholderTextColor={colors.inkMuted}
+                  value={newCatName}
+                  onChangeText={setNewCatName}
+                  maxLength={40}
+                  onSubmitEditing={handleCreateCategory}
+                  style={[
+                    styles.createInput,
+                    {
+                      color: colors.ink,
+                      borderColor: colors.border,
+                      backgroundColor: colors.canvas,
+                    },
+                  ]}
+                />
+                <AppButton
+                  label="Add"
+                  disabled={!newCatName.trim()}
+                  onPress={handleCreateCategory}
+                  style={styles.addCategoryButton}
+                />
+                <Pressable
+                  onPress={() => setShowCreateInput(false)}
+                  style={styles.cancelCreateButton}
+                >
+                  <X size={18} color={colors.inkMuted} />
+                </Pressable>
+              </View>
+            ) : (
+              <Pressable
+                onPress={() => setShowCreateInput(true)}
+                style={styles.createRow}
+              >
+                <Plus size={16} color={colors.brand} />
+                <Text
+                  style={[
+                    styles.createRowText,
+                    { color: colors.brand },
+                  ]}
+                >
+                  Create new category
+                </Text>
+              </Pressable>
+            )}
+
+            <View style={styles.modalActions}>
+              <View style={styles.modalActionFlex}>
+                <AppButton
+                  label="Cancel"
+                  variant="ghost"
+                  fullWidth
+                  onPress={handleCancelCategoryModal}
+                />
+              </View>
+              <View style={styles.modalActionFlex}>
+                <AppButton
+                  label="Add to Library"
+                  fullWidth
+                  onPress={handleConfirmCategoryAndImport}
+                />
+              </View>
+            </View>
+          </Pressable>
+        </Pressable>
+      </Modal>
+
       <View style={styles.heading}>
         <Text style={[styles.title, { color: colors.ink }]}>Import a book</Text>
         <Text style={[styles.intro, { color: colors.inkMuted }]}>
@@ -128,11 +369,7 @@ export function ImportBookScreen() {
           }
           fullWidth
           loading={busy}
-          onPress={async () => {
-            setImportedId(undefined);
-            const book = await chooseAndImportBook();
-            setImportedId(book?.id);
-          }}
+          onPress={handleChooseFile}
         />
         {copying ? (
           <AppButton
@@ -218,36 +455,29 @@ export function ImportBookScreen() {
           {complete && importedId ? (
             <View style={styles.genreSection}>
               <Text style={[styles.genreLabel, { color: colors.ink }]}>
-                Choose genre (optional):
+                Category:
               </Text>
               <View style={styles.genreChips}>
-                {[
-                  'Fiction',
-                  'Non-Fiction',
-                  'Sci-Fi',
-                  'Fantasy',
-                  'Mystery',
-                  'Biography',
-                  'History',
-                  'Philosophy',
-                  'Self-Help',
-                  'Classics',
-                ].map(g => {
-                  const active = selectedGenre === g;
+                {categories.map(c => {
+                  const book = books.find(b => b.id === importedId);
+                  const isCurrent =
+                    c.toLowerCase() === 'default'
+                      ? !book?.genre ||
+                        book.genre === 'Default' ||
+                        book.genre === 'Uncategorized'
+                      : book?.genre?.toLowerCase() === c.toLowerCase();
                   return (
                     <Pressable
-                      key={g}
+                      key={c}
                       accessibilityRole="button"
-                      accessibilityState={{ selected: active }}
+                      accessibilityState={{ selected: isCurrent }}
                       onPress={async () => {
-                        setSelectedGenre(g);
-                        const book = books.find(b => b.id === importedId);
                         if (book) {
                           await updateBookMetadata(
                             importedId,
                             book.title,
                             book.author,
-                            g,
+                            c,
                             book.coverChoice ?? -1,
                           );
                         }
@@ -255,18 +485,18 @@ export function ImportBookScreen() {
                       style={[
                         styles.genreChip,
                         {
-                          backgroundColor: active ? colors.brand : colors.surface,
-                          borderColor: active ? colors.brand : colors.border,
+                          backgroundColor: isCurrent ? colors.brand : colors.surface,
+                          borderColor: isCurrent ? colors.brand : colors.border,
                         },
                       ]}
                     >
                       <Text
                         style={[
                           styles.genreChipText,
-                          { color: active ? colors.white : colors.ink },
+                          { color: isCurrent ? colors.white : colors.ink },
                         ]}
                       >
-                        {g}
+                        {c}
                       </Text>
                     </Pressable>
                   );
@@ -412,4 +642,117 @@ const styles = StyleSheet.create({
   privacyTitle: typography.label,
   privacyBody: { ...typography.small, marginTop: 2 },
   flex: { flex: 1 },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.65)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: spacing.lg,
+  },
+  categoryModalCard: {
+    width: '100%',
+    maxWidth: 420,
+    borderRadius: radius.xl,
+    padding: spacing.xl,
+    borderWidth: 1,
+    maxHeight: '85%',
+  },
+  modalHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  modalHeaderIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  modalTitle: {
+    ...typography.sectionTitle,
+    fontSize: 18,
+  },
+  bookNameBadge: {
+    marginTop: spacing.sm,
+    marginBottom: spacing.xs,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+    borderRadius: radius.sm,
+  },
+  bookNameText: {
+    ...typography.small,
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  categoryPrompt: {
+    ...typography.label,
+    fontSize: 13,
+  },
+  categoryListScroll: {
+    maxHeight: 220,
+    marginVertical: spacing.xs,
+  },
+  categoryOptionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 10,
+    paddingHorizontal: spacing.sm,
+    borderRadius: radius.md,
+    marginVertical: 2,
+  },
+  radioCircle: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    borderWidth: 2,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: spacing.sm,
+  },
+  categoryOptionText: {
+    ...typography.body,
+    fontSize: 15,
+    flex: 1,
+  },
+  createRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    marginTop: spacing.sm,
+    paddingVertical: spacing.xs,
+  },
+  createRowText: {
+    ...typography.label,
+    fontSize: 14,
+  },
+  createCategoryInputRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    marginTop: spacing.sm,
+  },
+  createInput: {
+    ...typography.body,
+    flex: 1,
+    height: 42,
+    borderWidth: 1,
+    borderRadius: radius.md,
+    paddingHorizontal: spacing.sm,
+    fontSize: 14,
+  },
+  addCategoryButton: {
+    minWidth: 60,
+  },
+  cancelCreateButton: {
+    padding: spacing.xs,
+  },
+  modalActions: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+    marginTop: spacing.lg,
+  },
+  modalActionFlex: {
+    flex: 1,
+  },
 });

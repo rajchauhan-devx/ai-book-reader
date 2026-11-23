@@ -326,7 +326,7 @@ export function HomeScreen() {
               <LibraryIcon size={22} color={colors.listen} />
             </View>
             <Text style={[styles.actionLabel, { color: colors.ink }]}>
-              Your Library
+              Library
             </Text>
             <Text style={[styles.actionSub, { color: colors.inkMuted }]}>
               {totalBooks} {totalBooks === 1 ? 'book' : 'books'}
@@ -484,7 +484,7 @@ const styles = StyleSheet.create({
   },
   content: {
     padding: spacing.md,
-    paddingBottom: spacing.xxl,
+    paddingBottom: 110,
     gap: spacing.lg,
   },
   header: {

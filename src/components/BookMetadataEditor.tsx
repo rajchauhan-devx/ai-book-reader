@@ -1,21 +1,27 @@
 import React, { useState } from 'react';
 import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Plus, X } from 'lucide-react-native';
 import { AppButton } from './AppButton';
 import { coverPalettes } from '../services/bookLibrary';
 import { useLibrary } from '../state/LibraryProvider';
 import { useAppTheme } from '../theme/ThemeProvider';
 import type { Book } from '../types/library';
 import { radius, typography } from '../theme/tokens';
+
 export function BookMetadataEditor({ book }: { book: Book }) {
   const { colors } = useAppTheme();
-  const { updateBookMetadata, markBookFinished } = useLibrary();
+  const { updateBookMetadata, markBookFinished, categories, addCategory } =
+    useLibrary();
   const [editing, setEditing] = useState(false);
   const [title, setTitle] = useState(book.title);
   const [author, setAuthor] = useState(book.author);
-  const [genre, setGenre] = useState(book.genre ?? 'Uncategorized');
+  const [genre, setGenre] = useState(book.genre ?? 'Default');
   const [cover, setCover] = useState(book.coverChoice ?? -1);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [showNewCatInput, setShowNewCatInput] = useState(false);
+  const [newCatName, setNewCatName] = useState('');
+
   async function save() {
     setBusy(true);
     setError('');
@@ -28,6 +34,7 @@ export function BookMetadataEditor({ book }: { book: Book }) {
       setBusy(false);
     }
   }
+
   async function finish() {
     setBusy(true);
     setError('');
@@ -39,6 +46,20 @@ export function BookMetadataEditor({ book }: { book: Book }) {
       setBusy(false);
     }
   }
+
+  async function handleAddCategory() {
+    const trimmed = newCatName.trim();
+    if (!trimmed) return;
+    try {
+      await addCategory(trimmed);
+      setGenre(trimmed);
+      setNewCatName('');
+      setShowNewCatInput(false);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not add category');
+    }
+  }
+
   return (
     <View style={styles.root}>
       {editing ? (
@@ -73,21 +94,15 @@ export function BookMetadataEditor({ book }: { book: Book }) {
               },
             ]}
           />
-          <Text style={[styles.label, { color: colors.ink }]}>Genre</Text>
+          <Text style={[styles.label, { color: colors.ink }]}>Category</Text>
           <View style={styles.genreChips}>
-            {[
-              'Fiction',
-              'Non-Fiction',
-              'Sci-Fi',
-              'Fantasy',
-              'Mystery',
-              'Biography',
-              'History',
-              'Philosophy',
-              'Self-Help',
-              'Classics',
-            ].map(g => {
-              const active = genre === g;
+            {categories.map(g => {
+              const active =
+                g.toLowerCase() === 'default'
+                  ? !genre ||
+                    genre.toLowerCase() === 'default' ||
+                    genre.toLowerCase() === 'uncategorized'
+                  : genre.toLowerCase() === g.toLowerCase();
               return (
                 <Pressable
                   key={g}
@@ -114,9 +129,53 @@ export function BookMetadataEditor({ book }: { book: Book }) {
               );
             })}
           </View>
+
+          {showNewCatInput ? (
+            <View style={styles.createCatRow}>
+              <TextInput
+                autoFocus
+                placeholder="New category name…"
+                placeholderTextColor={colors.inkMuted}
+                value={newCatName}
+                onChangeText={setNewCatName}
+                onSubmitEditing={handleAddCategory}
+                style={[
+                  styles.createCatInput,
+                  {
+                    color: colors.ink,
+                    borderColor: colors.border,
+                    backgroundColor: colors.surface,
+                  },
+                ]}
+              />
+              <AppButton
+                label="Add"
+                disabled={!newCatName.trim()}
+                onPress={handleAddCategory}
+                style={styles.addCategorySubmitBtn}
+              />
+              <Pressable
+                onPress={() => setShowNewCatInput(false)}
+                style={styles.cancelCatBtn}
+              >
+                <X size={18} color={colors.inkMuted} />
+              </Pressable>
+            </View>
+          ) : (
+            <Pressable
+              onPress={() => setShowNewCatInput(true)}
+              style={styles.addCategoryRow}
+            >
+              <Plus size={15} color={colors.brand} />
+              <Text style={[styles.addCategoryText, { color: colors.brand }]}>
+                Create new category
+              </Text>
+            </Pressable>
+          )}
+
           <TextInput
             accessibilityLabel="Custom genre"
-            placeholder="Or enter custom genre…"
+            placeholder="Or enter custom category…"
             placeholderTextColor={colors.inkMuted}
             maxLength={60}
             value={genre}
@@ -182,12 +241,12 @@ export function BookMetadataEditor({ book }: { book: Book }) {
         </>
       ) : (
         <AppButton
-          label="Edit title, author, genre & cover"
+          label="Edit title, author, category & cover"
           variant="secondary"
           onPress={() => {
             setTitle(book.title);
             setAuthor(book.author);
-            setGenre(book.genre ?? 'Uncategorized');
+            setGenre(book.genre ?? 'Default');
             setCover(book.coverChoice ?? -1);
             setError('');
             setEditing(true);
@@ -210,6 +269,7 @@ export function BookMetadataEditor({ book }: { book: Book }) {
     </View>
   );
 }
+
 const styles = StyleSheet.create({
   selectedCover: { borderWidth: 3 },
   unselectedCover: { borderWidth: 1 },
@@ -239,4 +299,35 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   genreChipText: { fontSize: 13, fontWeight: '600' },
+  addCategoryRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingVertical: 4,
+  },
+  addCategoryText: {
+    ...typography.label,
+    fontSize: 13,
+  },
+  createCatRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginVertical: 4,
+  },
+  createCatInput: {
+    ...typography.body,
+    flex: 1,
+    height: 40,
+    borderWidth: 1,
+    borderRadius: radius.md,
+    paddingHorizontal: 10,
+    fontSize: 13,
+  },
+  cancelCatBtn: {
+    padding: 6,
+  },
+  addCategorySubmitBtn: {
+    minWidth: 60,
+  },
 });

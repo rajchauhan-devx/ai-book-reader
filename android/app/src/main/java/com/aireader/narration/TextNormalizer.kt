@@ -48,7 +48,16 @@ object TextNormalizer {
     Pattern.compile("\\bCol\\.(?=\\s|$)", Pattern.CASE_INSENSITIVE) to "Colonel",
     Pattern.compile("\\bGen\\.(?=\\s|$)", Pattern.CASE_INSENSITIVE) to "General",
     Pattern.compile("\\bLt\\.(?=\\s|$)", Pattern.CASE_INSENSITIVE) to "Lieutenant",
+    Pattern.compile("\\bLieut\\.(?=\\s|$)", Pattern.CASE_INSENSITIVE) to "Lieutenant",
     Pattern.compile("\\bSgt\\.(?=\\s|$)", Pattern.CASE_INSENSITIVE) to "Sergeant",
+    Pattern.compile("\\bMaj\\.(?=\\s|$)", Pattern.CASE_INSENSITIVE) to "Major",
+    Pattern.compile("\\bCmdr\\.(?=\\s|$)", Pattern.CASE_INSENSITIVE) to "Commander",
+    Pattern.compile("\\bGov\\.(?=\\s|$)", Pattern.CASE_INSENSITIVE) to "Governor",
+    Pattern.compile("\\bSen\\.(?=\\s|$)", Pattern.CASE_INSENSITIVE) to "Senator",
+    Pattern.compile("\\bRep\\.(?=\\s|$)", Pattern.CASE_INSENSITIVE) to "Representative",
+    Pattern.compile("\\bHon\\.(?=\\s|$)", Pattern.CASE_INSENSITIVE) to "Honorable",
+    Pattern.compile("\\bPres\\.(?=\\s|$)", Pattern.CASE_INSENSITIVE) to "President",
+    Pattern.compile("\\bFr\\.(?=\\s|$)", Pattern.CASE_INSENSITIVE) to "Father",
     Pattern.compile("\\bRev\\.(?=\\s|$)", Pattern.CASE_INSENSITIVE) to "Reverend",
     Pattern.compile("\\bJr\\.(?=\\s|[.,]|$)", Pattern.CASE_INSENSITIVE) to "Junior",
     Pattern.compile("\\bSr\\.(?=\\s|[.,]|$)", Pattern.CASE_INSENSITIVE) to "Senior",
@@ -58,6 +67,7 @@ object TextNormalizer {
     Pattern.compile("\\bsec\\.\\s*(\\d+)", Pattern.CASE_INSENSITIVE) to "section $1",
     Pattern.compile("\\bpp\\.\\s*(\\d+)", Pattern.CASE_INSENSITIVE) to "pages $1",
     Pattern.compile("\\bp\\.\\s*(\\d+)", Pattern.CASE_INSENSITIVE) to "page $1",
+    Pattern.compile("\\bno\\.\\s*(\\d+)", Pattern.CASE_INSENSITIVE) to "number $1",
     Pattern.compile("\\bvs\\.(?=\\s|$)", Pattern.CASE_INSENSITIVE) to "versus",
     Pattern.compile("\\betc\\.(?=[,;])", Pattern.CASE_INSENSITIVE) to "etcetera",
     Pattern.compile("\\betc\\.", Pattern.CASE_INSENSITIVE) to "etcetera.",
@@ -66,6 +76,122 @@ object TextNormalizer {
     Pattern.compile("\\bapprox\\.(?=\\s|$)", Pattern.CASE_INSENSITIVE) to "approximately",
     Pattern.compile("\\bdept\\.(?=\\s|$)", Pattern.CASE_INSENSITIVE) to "department"
   )
+
+  val NON_TERMINAL_ABBREVIATIONS = setOf(
+    "mr", "mrs", "ms", "miss", "dr", "prof", "capt", "col", "gen", "lt", "lieut",
+    "sgt", "maj", "cmdr", "adm", "gov", "sen", "rep", "rev", "fr", "hon", "pres",
+    "jr", "sr", "vs", "v", "eg", "ie", "viz", "al", "approx", "ca", "cf",
+    "vol", "vols", "chap", "ch", "sec", "no", "nos", "p", "pp", "ed", "eds", "fig",
+    "figs", "art", "bk", "bks", "op", "cit", "ibid", "loc", "dept"
+  )
+
+  private val UNSPACED_TITLES_PATTERN = Pattern.compile(
+    """\b(Mr|Mrs|Ms|Miss|Dr|Prof|Capt|Col|Gen|Lt|Lieut|Sgt|Maj|Cmdr|Adm|Gov|Sen|Rep|Rev|Fr|Sr|Jr|St|vs|etc|approx|vol|chap|ch|sec|pp|p|no)\.([A-Za-z])""",
+    Pattern.CASE_INSENSITIVE
+  )
+
+  fun fixUnspacedTitles(text: String?): String {
+    if (text.isNullOrBlank()) return ""
+    val matcher = UNSPACED_TITLES_PATTERN.matcher(text)
+    val sb = StringBuffer()
+    while (matcher.find()) {
+      val title = matcher.group(1) ?: ""
+      val nextChar = matcher.group(2) ?: ""
+      val formattedTitle = title.replaceFirstChar { if (it.isLowerCase()) it.titlecase(Locale.ROOT) else it.toString() }
+      val formattedNext = nextChar.replaceFirstChar { if (it.isLowerCase()) it.titlecase(Locale.ROOT) else it.toString() }
+      matcher.appendReplacement(sb, "$formattedTitle. $formattedNext")
+    }
+    matcher.appendTail(sb)
+    return sb.toString()
+  }
+
+  fun isAbbreviationOrInitial(text: String?): Boolean {
+    if (text.isNullOrBlank()) return false
+    val trimmed = text.trim()
+    val cleaned = trimmed.replace(Regex("""[”"’'»\)\],;:]+$"""), "").trim()
+    if (!cleaned.endsWith(".")) return false
+
+    val lastWord = cleaned.substringAfterLast(' ')
+      .trim()
+      .lowercase(Locale.ROOT)
+      .removeSuffix(".")
+
+    if (lastWord.isEmpty()) return false
+    if (lastWord.length == 1 && lastWord[0].isLetter()) return true
+    if (Regex("""^[a-z](\.[a-z])+$""").matches(lastWord)) return true
+    if (lastWord in NON_TERMINAL_ABBREVIATIONS) return true
+
+    return false
+  }
+
+  data class SentenceSpan(val start: Int, val end: Int, val text: String)
+
+  fun shouldStitchSentences(currentText: String, nextText: String): Boolean {
+    val curr = currentText.trim()
+    val next = nextText.trim()
+    if (curr.isEmpty() || next.isEmpty()) return true
+
+    if (isAbbreviationOrInitial(curr)) return true
+
+    val endsWithTerminal = curr.endsWith(".") || curr.endsWith("!") || curr.endsWith("?") ||
+      curr.endsWith(".”") || curr.endsWith("!”") || curr.endsWith("?”") ||
+      curr.endsWith(".\"") || curr.endsWith("!\"") || curr.endsWith("?\"") ||
+      curr.endsWith(".’") || curr.endsWith("!’") || curr.endsWith("?’") ||
+      curr.endsWith(".»") || curr.endsWith("!»") || curr.endsWith("?»")
+    if (!endsWithTerminal) return true
+
+    val firstNextChar = next.first()
+    if (firstNextChar.isLowerCase()) return true
+    if (firstNextChar in setOf(',', ';', ':', ')', ']', '}', '»', '—', '-')) return true
+
+    return false
+  }
+
+  fun splitSentences(raw: String): List<SentenceSpan> {
+    if (raw.isBlank()) return emptyList()
+    val iterator = java.text.BreakIterator.getSentenceInstance(Locale.ROOT)
+    iterator.setText(raw)
+
+    val rawSlices = mutableListOf<Pair<Int, Int>>()
+    var start = iterator.first()
+    var end = iterator.next()
+    while (end != java.text.BreakIterator.DONE) {
+      if (end > start) {
+        rawSlices.add(Pair(start, end))
+      }
+      start = end
+      end = iterator.next()
+    }
+    if (rawSlices.isEmpty()) return emptyList()
+
+    val result = mutableListOf<SentenceSpan>()
+    var currentStart = rawSlices[0].first
+    var currentEnd = rawSlices[0].second
+
+    for (i in 1 until rawSlices.size) {
+      val nextSlice = rawSlices[i]
+      val currentText = raw.substring(currentStart, currentEnd)
+      val nextText = raw.substring(nextSlice.first, nextSlice.second)
+
+      if (shouldStitchSentences(currentText, nextText)) {
+        currentEnd = nextSlice.second
+      } else {
+        val sliceStr = raw.substring(currentStart, currentEnd)
+        if (sliceStr.isNotBlank()) {
+          result.add(SentenceSpan(currentStart, currentEnd, sliceStr))
+        }
+        currentStart = nextSlice.first
+        currentEnd = nextSlice.second
+      }
+    }
+
+    val finalStr = raw.substring(currentStart, currentEnd)
+    if (finalStr.isNotBlank()) {
+      result.add(SentenceSpan(currentStart, currentEnd, finalStr))
+    }
+
+    return result
+  }
 
   fun integerToWords(number: Long): String {
     if (number == 0L) return "zero"
@@ -118,7 +244,7 @@ object TextNormalizer {
 
   fun normalize(rawText: String?): String {
     if (rawText.isNullOrBlank()) return ""
-    var text = rawText.trim()
+    var text = fixUnspacedTitles(rawText.trim())
 
     for ((pattern, replacement) in ABBREVIATIONS) {
       text = pattern.matcher(text).replaceAll(replacement)
@@ -200,7 +326,7 @@ object TextNormalizer {
 
   fun fixLigatureSplits(rawText: String?): String {
     if (rawText.isNullOrBlank()) return ""
-    var text = rawText
+    var text = fixUnspacedTitles(rawText)
 
     // Strip soft hyphens and invisible zero-width markers
     text = text.replace("\u00AD", "")

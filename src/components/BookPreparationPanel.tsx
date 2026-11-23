@@ -43,62 +43,62 @@ export function BookPreparationPanel({ book }: { book: Book }) {
 
   return (
     <View style={styles.container}>
-      <View
-        style={[
-          styles.card,
-          { backgroundColor: colors.brandSoft, borderColor: colors.border },
-        ]}
-      >
-        <Text style={[styles.title, { color: colors.ink }]}>
-          {preparing
-            ? 'Preparing your book'
-            : ready
-            ? 'Your text is ready'
-            : 'Safely stored on this phone'}
-        </Text>
-        <Text style={[styles.body, { color: colors.inkMuted }]}>
-          {preparing
-            ? `${
-                book.preparationMessage ?? 'Waiting to prepare text'
-              } · ${percent}%`
-            : ready
-            ? 'Read the extracted text with automatic page and chapter saving. Full-book narration is the next major step.'
-            : supported
-            ? 'Prepare this book into readable text privately on your phone. Scanned PDFs require OCR and protected books are not supported.'
-            : 'This file format is not supported.'}
-        </Text>
-        {preparing ? (
-          <View
-            accessibilityRole="progressbar"
-            accessibilityLabel="Text preparation"
-            accessibilityValue={{ min: 0, max: 100, now: percent }}
-            style={[styles.track, { backgroundColor: colors.surfaceMuted }]}
-          >
-            <View
-              style={[
-                styles.fill,
-                { backgroundColor: colors.brand, width: `${percent}%` },
-              ]}
-            />
-          </View>
-        ) : null}
-        {book.failureMessage || error ? (
-          <Text
-            accessibilityLiveRegion="polite"
-            style={[
-              styles.body,
-              {
-                color:
-                  error || book.importState === 'failed'
-                    ? colors.danger
-                    : colors.inkMuted,
-              },
-            ]}
-          >
-            {error ?? book.failureMessage}
+      {/* If preparing or not ready, show helpful status card */}
+      {!ready || preparing ? (
+        <View
+          style={[
+            styles.card,
+            { backgroundColor: colors.surfaceMuted, borderColor: colors.border },
+          ]}
+        >
+          <Text style={[styles.title, { color: colors.ink }]}>
+            {preparing
+              ? 'Preparing your book'
+              : 'Safely stored on this phone'}
           </Text>
-        ) : null}
-      </View>
+          <Text style={[styles.body, { color: colors.inkMuted }]}>
+            {preparing
+              ? `${
+                  book.preparationMessage ?? 'Extracting chapters & text'
+                } · ${percent}%`
+              : supported
+              ? 'Prepare this book into readable text privately on your phone for seamless narration.'
+              : 'This file format is not supported.'}
+          </Text>
+          {preparing ? (
+            <View
+              accessibilityRole="progressbar"
+              accessibilityLabel="Text preparation"
+              accessibilityValue={{ min: 0, max: 100, now: percent }}
+              style={[styles.track, { backgroundColor: colors.surface }]}
+            >
+              <View
+                style={[
+                  styles.fill,
+                  { backgroundColor: colors.brand, width: `${percent}%` },
+                ]}
+              />
+            </View>
+          ) : null}
+          {book.failureMessage || error ? (
+            <Text
+              accessibilityLiveRegion="polite"
+              style={[
+                styles.body,
+                {
+                  color:
+                    error || book.importState === 'failed'
+                      ? colors.danger
+                      : colors.inkMuted,
+                },
+              ]}
+            >
+              {error ?? book.failureMessage}
+            </Text>
+          ) : null}
+        </View>
+      ) : null}
+
       {ready ? (
         <View style={styles.actionGroup}>
           <AppButton
@@ -123,11 +123,13 @@ export function BookPreparationPanel({ book }: { book: Book }) {
           />
         </View>
       ) : null}
+
       {book.warnings?.map(warning => (
         <Text key={warning} style={[styles.body, { color: colors.inkMuted }]}>
           {warning}
         </Text>
       ))}
+
       {preparing ? (
         <AppButton
           label="Stop preparation"
@@ -148,17 +150,17 @@ export function BookPreparationPanel({ book }: { book: Book }) {
         />
       ) : (
         <AppButton
-          label="Prepare text again"
+          label="Reprocess text"
           variant="ghost"
           loading={actionBusy}
           onPress={() =>
             Alert.alert(
-              'Prepare again?',
-              'Your existing text remains available until the new extraction is saved. Matching reading locations are retained; changed locations may reset.',
+              'Reprocess text?',
+              'Your existing text remains available until the new extraction is saved.',
               [
                 { text: 'Cancel', style: 'cancel' },
                 {
-                  text: 'Prepare again',
+                  text: 'Reprocess',
                   onPress: () => runAction(false, true),
                 },
               ],

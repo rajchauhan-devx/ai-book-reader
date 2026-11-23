@@ -119,8 +119,9 @@ internal object PdfBookParser {
       if (firstChar.isLowerCase()) return true
       if (firstChar in setOf(',', ';', ':', ')', ']', '}', '»')) return true
 
-      val endsWithTerm = p.endsWith(".") || p.endsWith("!") || p.endsWith("?") ||
-                         p.endsWith("\"") || p.endsWith("”") || p.endsWith("’") || p.endsWith("»")
+      val endsWithTerm = (p.endsWith(".") || p.endsWith("!") || p.endsWith("?") ||
+                         p.endsWith("\"") || p.endsWith("”") || p.endsWith("’") || p.endsWith("»")) &&
+                         !TextNormalizer.isAbbreviationOrInitial(p)
       if (!endsWithTerm) {
         val isDialogStart = firstChar in setOf('"', '“', '‘', '\'')
         if (!isDialogStart) {
@@ -135,7 +136,7 @@ internal object PdfBookParser {
           if (lastWord in danglingWords || p.endsWith(",") || p.endsWith(";") || p.endsWith(":")) {
             return true
           }
-          if (p.last().isLetterOrDigit()) {
+          if (p.last().isLetterOrDigit() || TextNormalizer.isAbbreviationOrInitial(p)) {
             return true
           }
         }

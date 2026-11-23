@@ -55,7 +55,7 @@ import { ReaderPlayerBar } from '../components/ReaderPlayerBar';
 import { useNarrationPlayer } from '../state/NarrationPlayerProvider';
 import { narrationPlayerService } from '../services/narrationPlayer';
 import { AppButton } from '../components/AppButton';
-import { fixLigatureSplits } from '../services/textNormalizer';
+import { fixLigatureSplits, isAbbreviationOrInitial } from '../services/textNormalizer';
 import { useAppTheme } from '../theme/ThemeProvider';
 import { radius, spacing } from '../theme/tokens';
 import type { Book, BookChapter, ChapterPage } from '../types/library';
@@ -78,6 +78,23 @@ function cleanDisplayText(text: string): string {
     .replace(/[\r\n]+/g, ' ')
     .replace(/\s+/g, ' ');
   return fixLigatureSplits(cleaned);
+}
+
+function parseChapterHeading(title?: string): { chapterTag: string | null; chapterTitle: string } {
+  if (!title) return { chapterTag: null, chapterTitle: '' };
+  const trimmed = title.trim();
+  const match = trimmed.match(/^(chapter\s+\d+|\d+)[.:\-—\s]+(.*)$/i);
+  if (match) {
+    const rawNum = match[1].replace(/chapter\s+/i, '').trim();
+    const rest = match[2].trim();
+    if (rest) {
+      return {
+        chapterTag: `CHAPTER ${rawNum}`,
+        chapterTitle: rest,
+      };
+    }
+  }
+  return { chapterTag: null, chapterTitle: trimmed };
 }
 
 export function ReaderScreen() {
@@ -115,7 +132,7 @@ export function ReaderScreen() {
       if (firstChar >= 'a' && firstChar <= 'z') return true;
       if (/^[,;:\]\)}»—]/.test(c)) return true;
 
-      const endsWithTerm = /[.!?”"’»]$/.test(p);
+      const endsWithTerm = /[.!?”"’»]$/.test(p) && !isAbbreviationOrInitial(p);
       if (!endsWithTerm) {
         if (!/^[“"‘']/.test(c)) {
           const lastWord = (p.split(/\s+/).pop() || '').toLowerCase();
@@ -127,7 +144,7 @@ export function ReaderScreen() {
             'my', 'his', 'her', 'their', 'our', 'your', 'its', 'like', 'not', 'too',
           ]);
           if (danglingWords.has(lastWord) || /[,;:]$/.test(p)) return true;
-          if (/[a-zA-Z0-9]$/.test(p)) return true;
+          if (/[a-zA-Z0-9]$/.test(p) || isAbbreviationOrInitial(p)) return true;
         }
       }
       return false;
@@ -1083,71 +1100,81 @@ export function ReaderScreen() {
           });
         }}
         ListHeaderComponent={
-          <View style={styles.chapterHeader}>
-            <Text style={[styles.chapterHeading, { color: colors.ink }]}>
-              {currentChapter?.title}
-            </Text>
-            {readerMode === 'audiobook' &&
-              chapterAudioStatus &&
-              chapterAudioStatus.totalSegments > 0 && (
-              <View style={styles.audioStatusRow}>
-                <View
-                  style={[
-                    styles.audioBadge,
-                    {
-                      backgroundColor: chapterAudioStatus.isComplete
-                        ? colors.brandSoft
-                        : colors.listenSoft,
-                    },
-                  ]}
-                >
-                  <Headphones
-                    size={13}
-                    color={
-                      chapterAudioStatus.isComplete ? colors.brand : colors.listen
-                    }
-                  />
-                  <Text
-                    style={[
-                      styles.audioBadgeText,
-                      {
-                        color: chapterAudioStatus.isComplete
-                          ? colors.brand
-                          : colors.listen,
-                      },
-                    ]}
-                  >
-                    {chapterAudioStatus.isComplete
-                      ? 'Audio Ready'
-                      : `${chapterAudioStatus.readySegments} / ${chapterAudioStatus.totalSegments} prepared`}
+          (() => {
+            const { chapterTag, chapterTitle } = parseChapterHeading(currentChapter?.title);
+            return (
+              <View style={styles.chapterHeader}>
+                {chapterTag ? (
+                  <Text style={[styles.chapterTag, { color: colors.listen }]}>
+                    {chapterTag}
                   </Text>
-                </View>
-
-                {!chapterAudioStatus.isComplete &&
-                  (!chapterPrepProgress ||
-                    chapterPrepProgress.state === 'idle' ||
-                    chapterPrepProgress.state === 'cancelled' ||
-                    chapterPrepProgress.state === 'failed') && (
-                    <Pressable
-                      accessibilityRole="button"
-                      accessibilityLabel="Prepare entire chapter audio"
-                      onPress={handlePrepareChapterAudio}
-                      style={[styles.prepHeaderBtn, { borderColor: colors.listen }]}
+                ) : null}
+                <Text style={[styles.chapterHeading, { color: colors.ink }]}>
+                  {chapterTitle || currentChapter?.title}
+                </Text>
+                {readerMode === 'audiobook' &&
+                  chapterAudioStatus &&
+                  chapterAudioStatus.totalSegments > 0 && (
+                  <View style={styles.audioStatusRow}>
+                    <View
+                      style={[
+                        styles.audioBadge,
+                        {
+                          backgroundColor: chapterAudioStatus.isComplete
+                            ? colors.brandSoft
+                            : colors.listenSoft,
+                        },
+                      ]}
                     >
-                      <Volume2 size={13} color={colors.listen} />
+                      <Headphones
+                        size={13}
+                        color={
+                          chapterAudioStatus.isComplete ? colors.brand : colors.listen
+                        }
+                      />
                       <Text
                         style={[
-                          styles.prepHeaderBtnText,
-                          { color: colors.listen },
+                          styles.audioBadgeText,
+                          {
+                            color: chapterAudioStatus.isComplete
+                              ? colors.brand
+                              : colors.listen,
+                          },
                         ]}
                       >
-                        Prepare Chapter
+                        {chapterAudioStatus.isComplete
+                          ? 'Audio Ready'
+                          : `${chapterAudioStatus.readySegments} / ${chapterAudioStatus.totalSegments} prepared`}
                       </Text>
-                    </Pressable>
-                  )}
+                    </View>
+
+                    {!chapterAudioStatus.isComplete &&
+                      (!chapterPrepProgress ||
+                        chapterPrepProgress.state === 'idle' ||
+                        chapterPrepProgress.state === 'cancelled' ||
+                        chapterPrepProgress.state === 'failed') && (
+                        <Pressable
+                          accessibilityRole="button"
+                          accessibilityLabel="Prepare entire chapter audio"
+                          onPress={handlePrepareChapterAudio}
+                          style={[styles.prepHeaderBtn, { borderColor: colors.listen }]}
+                        >
+                          <Volume2 size={13} color={colors.listen} />
+                          <Text
+                            style={[
+                              styles.prepHeaderBtnText,
+                              { color: colors.listen },
+                            ]}
+                          >
+                            Prepare Chapter
+                          </Text>
+                        </Pressable>
+                      )}
+                  </View>
+                )}
               </View>
-            )}
-          </View>
+            );
+          })()
         }
         renderItem={({ item: block }) => {
           const isHeading = block.kind === 'heading';
@@ -1982,24 +2009,24 @@ const styles = StyleSheet.create({
   errorTitle: { fontSize: 20, fontWeight: '700', marginBottom: spacing.xs },
   errorText: { fontSize: 14, textAlign: 'center', maxWidth: 300 },
   topbar: {
-    height: 60,
+    height: 56,
     borderBottomWidth: 1,
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: spacing.sm,
-    gap: spacing.xs,
+    gap: 4,
   },
   topIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: radius.pill,
+    width: 38,
+    height: 38,
+    borderRadius: 19,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  headingCopy: { flex: 1, paddingHorizontal: spacing.xs },
-  bookTitle: { fontSize: 14, fontWeight: '700' },
-  chapterLabel: { fontSize: 12 },
-  topActions: { flexDirection: 'row', alignItems: 'center' },
+  headingCopy: { flex: 1, paddingHorizontal: spacing.xs, alignItems: 'center' },
+  bookTitle: { fontSize: 13, fontWeight: '700', letterSpacing: 0.1, textAlign: 'center' },
+  chapterLabel: { fontSize: 11, marginTop: 1, textAlign: 'center' },
+  topActions: { flexDirection: 'row', alignItems: 'center', gap: 2 },
   searchBar: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -2017,13 +2044,31 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.xxs,
   },
   searchSummaryText: { fontSize: 12 },
-  content: { paddingHorizontal: spacing.lg, paddingTop: spacing.md },
-  chapterHeader: { marginBottom: spacing.lg },
-  chapterHeading: { fontSize: 22, fontWeight: '700' },
-  blockWrapper: { marginBottom: spacing.md },
-  headingBlock: { fontWeight: '700', marginTop: spacing.md },
+  content: { paddingHorizontal: 22, paddingTop: spacing.md },
+  chapterHeader: {
+    marginTop: spacing.xs,
+    marginBottom: 28,
+    paddingBottom: spacing.md,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(150, 150, 150, 0.15)',
+  },
+  chapterTag: {
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 2,
+    textTransform: 'uppercase',
+    marginBottom: 6,
+  },
+  chapterHeading: {
+    fontSize: 23,
+    lineHeight: 31,
+    fontWeight: '700',
+    letterSpacing: -0.2,
+  },
+  blockWrapper: { marginBottom: 18 },
+  headingBlock: { fontWeight: '700', marginTop: spacing.lg, marginBottom: spacing.xs },
   paragraphBlock: { textAlign: 'left' },
-  sentence: { borderRadius: 4 },
+  sentence: { borderRadius: 4, paddingVertical: 1 },
   bookmarkedSentence: { textDecorationLine: 'underline' },
   notedSentence: { borderBottomWidth: 1, borderBottomColor: '#D69A45' },
   footerContainer: { marginTop: spacing.xl, paddingBottom: spacing.xxl },
@@ -2177,9 +2222,9 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   stepperValue: { fontSize: 15, fontWeight: '700', minWidth: 54, textAlign: 'center' },
-  contentList: { paddingHorizontal: spacing.lg, paddingTop: spacing.md },
-  readModePadding: { paddingBottom: 40 },
-  audioModePadding: { paddingBottom: 120 },
+  contentList: { paddingHorizontal: 22, paddingTop: spacing.md },
+  readModePadding: { paddingBottom: 50 },
+  audioModePadding: { paddingBottom: 130 },
   selectedColorCircle: { borderWidth: 2.5 },
   currentTocTitle: { fontWeight: '700' },
   regularTocTitle: { fontWeight: '400' },

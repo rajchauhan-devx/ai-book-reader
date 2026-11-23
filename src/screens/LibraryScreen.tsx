@@ -2,6 +2,7 @@ import React, { useMemo, useState } from 'react';
 import {
   Alert,
   FlatList,
+  Modal,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -46,12 +47,23 @@ export function LibraryScreen() {
   const navigation =
     useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const { width } = useWindowDimensions();
-  const { books, loading, error, refresh, removeBook } = useLibrary();
+  const {
+    books,
+    categories,
+    addCategory,
+    deleteCategory,
+    loading,
+    error,
+    refresh,
+    removeBook,
+  } = useLibrary();
   const [query, setQuery] = useState('');
   const [format, setFormat] = useState<BookFormat | 'all'>('all');
   const [filter, setFilter] = useState<LibraryFilter>('all');
   const [sort, setSort] = useState<LibrarySort>('recent');
-  const [selectedGenre, setSelectedGenre] = useState<string | 'all'>('all');
+  const [selectedCategory, setSelectedCategory] = useState<string>('Default');
+  const [newCategoryModalOpen, setNewCategoryModalOpen] = useState(false);
+  const [newCategoryInput, setNewCategoryInput] = useState('');
   const [sortOpen, setSortOpen] = useState(false);
   const [showSamples, setShowSamples] = useState(false);
   const [selecting, setSelecting] = useState(false);
@@ -61,10 +73,22 @@ export function LibraryScreen() {
   const columns = width >= 960 ? 5 : width >= 720 ? 4 : 2;
   const cardWidth = (width - 40 - (columns - 1) * 16) / columns;
 
-  const distinctGenres = useMemo(
-    () => getDistinctGenres(showSamples ? [...books, ...samples] : books),
-    [books, showSamples],
-  );
+  const categoryCounts = useMemo(() => {
+    const list = showSamples ? [...books, ...samples] : books;
+    const counts: Record<string, number> = {};
+    categories.forEach(cat => {
+      if (cat.toLowerCase() === 'default') {
+        counts[cat] = list.filter(
+          b => !b.genre || b.genre === 'Default' || b.genre === 'Uncategorized',
+        ).length;
+      } else {
+        counts[cat] = list.filter(
+          b => b.genre?.toLowerCase() === cat.toLowerCase(),
+        ).length;
+      }
+    });
+    return counts;
+  }, [categories, books, showSamples]);
 
   const visible = useMemo(
     () =>
@@ -74,9 +98,9 @@ export function LibraryScreen() {
         format,
         filter,
         sort,
-        selectedGenre,
+        selectedCategory,
       ),
-    [books, showSamples, query, format, filter, sort, selectedGenre],
+    [books, showSamples, query, format, filter, sort, selectedCategory],
   );
 
   const selectedIds = books
@@ -186,6 +210,72 @@ export function LibraryScreen() {
         onSelect={setSort}
         onClose={() => setSortOpen(false)}
       />
+
+      {/* New Category Creation Modal */}
+      <Modal
+        visible={newCategoryModalOpen}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setNewCategoryModalOpen(false)}
+      >
+        <Pressable
+          style={styles.modalOverlay}
+          onPress={() => setNewCategoryModalOpen(false)}
+        >
+          <Pressable
+            style={[
+              styles.modalCard,
+              { backgroundColor: colors.surface, borderColor: colors.border },
+            ]}
+            onPress={e => e.stopPropagation()}
+          >
+            <Text style={[styles.modalTitle, { color: colors.ink }]}>
+              New Category
+            </Text>
+            <Text style={[styles.modalSubtitle, { color: colors.inkMuted }]}>
+              Enter a category name to organize your library (e.g. Fantasy, Horror, Manga).
+            </Text>
+            <TextInput
+              accessibilityLabel="Category name input"
+              autoFocus
+              placeholder="Category name…"
+              placeholderTextColor={colors.inkMuted}
+              value={newCategoryInput}
+              onChangeText={setNewCategoryInput}
+              style={[
+                styles.modalInput,
+                {
+                  color: colors.ink,
+                  borderColor: colors.border,
+                  backgroundColor: colors.canvas,
+                },
+              ]}
+            />
+            <View style={styles.modalActions}>
+              <AppButton
+                label="Cancel"
+                variant="ghost"
+                onPress={() => setNewCategoryModalOpen(false)}
+                style={styles.modalBtn}
+              />
+              <AppButton
+                label="Create"
+                disabled={!newCategoryInput.trim()}
+                onPress={async () => {
+                  const trimmed = newCategoryInput.trim();
+                  if (trimmed) {
+                    await addCategory(trimmed);
+                    setSelectedCategory(trimmed);
+                    setNewCategoryModalOpen(false);
+                  }
+                }}
+                style={styles.modalBtn}
+              />
+            </View>
+          </Pressable>
+        </Pressable>
+      </Modal>
+
       <FlatList
         key={columns}
         numColumns={columns}
@@ -215,6 +305,120 @@ export function LibraryScreen() {
                 icon={Plus}
                 onPress={() => navigation.navigate('ImportBook')}
               />
+            </View>
+
+            {/* Category Tabs: Default, User Categories, + New */}
+            <View style={styles.categoryTabsContainer}>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.categoryScroll}
+              >
+                {categories.map(cat => {
+                  const isSelected =
+                    selectedCategory.toLowerCase() === cat.toLowerCase();
+                  const count = categoryCounts[cat] ?? 0;
+                  return (
+                    <Pressable
+                      key={cat}
+                      accessibilityRole="tab"
+                      accessibilityState={{ selected: isSelected }}
+                      onPress={() => setSelectedCategory(cat)}
+                      onLongPress={() => {
+                        if (cat.toLowerCase() !== 'default') {
+                          Alert.alert(
+                            `Category: ${cat}`,
+                            'Manage this category',
+                            [
+                              { text: 'Cancel', style: 'cancel' },
+                              {
+                                text: 'Delete Category',
+                                style: 'destructive',
+                                onPress: async () => {
+                                  await deleteCategory(cat);
+                                  if (
+                                    selectedCategory.toLowerCase() ===
+                                    cat.toLowerCase()
+                                  ) {
+                                    setSelectedCategory('Default');
+                                  }
+                                },
+                              },
+                            ],
+                          );
+                        }
+                      }}
+                      style={[
+                        styles.categoryTab,
+                        {
+                          backgroundColor: isSelected
+                            ? colors.brand
+                            : colors.surface,
+                          borderColor: isSelected ? colors.brand : colors.border,
+                        },
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          styles.categoryTabText,
+                          { color: isSelected ? colors.white : colors.ink },
+                        ]}
+                      >
+                        {cat}
+                      </Text>
+                      {count > 0 && (
+                        <View
+                          style={[
+                            styles.categoryBadge,
+                            {
+                              backgroundColor: isSelected
+                                ? 'rgba(255, 255, 255, 0.25)'
+                                : colors.surfaceMuted,
+                            },
+                          ]}
+                        >
+                          <Text
+                            style={[
+                              styles.categoryBadgeText,
+                              {
+                                color: isSelected
+                                  ? colors.white
+                                  : colors.inkMuted,
+                              },
+                            ]}
+                          >
+                            {count}
+                          </Text>
+                        </View>
+                      )}
+                    </Pressable>
+                  );
+                })}
+
+                {/* + New Category Button */}
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="Create new category"
+                  onPress={() => {
+                    setNewCategoryInput('');
+                    setNewCategoryModalOpen(true);
+                  }}
+                  style={[
+                    styles.newCategoryBtn,
+                    {
+                      borderColor: colors.brand,
+                      backgroundColor: colors.surface,
+                    },
+                  ]}
+                >
+                  <Plus size={15} color={colors.brand} />
+                  <Text
+                    style={[styles.newCategoryText, { color: colors.brand }]}
+                  >
+                    New
+                  </Text>
+                </Pressable>
+              </ScrollView>
             </View>
 
             {/* Search Input */}
@@ -342,7 +546,7 @@ export function LibraryScreen() {
                   setQuery('');
                   setFilter('all');
                   setFormat('all');
-                  setSelectedGenre('all');
+                  setSelectedCategory('Default');
                 }}
               />
             ) : (
@@ -369,7 +573,7 @@ export function LibraryScreen() {
 }
 
 const styles = StyleSheet.create({
-  content: { padding: 20, paddingBottom: 40 },
+  content: { padding: 20, paddingBottom: 110 },
   header: { gap: 14, marginBottom: 20 },
   topRow: {
     flexDirection: 'row',
@@ -391,11 +595,11 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderRadius: radius.md,
   },
-  input: { ...typography.body, flex: 1, minHeight: 50 },
+  input: { ...typography.body, flex: 1, minHeight: 46 },
   chips: { gap: 8 },
   chip: {
     paddingHorizontal: 14,
-    minHeight: 44,
+    minHeight: 36,
     justifyContent: 'center',
     borderRadius: radius.pill,
     borderWidth: 1,
@@ -417,4 +621,87 @@ const styles = StyleSheet.create({
     gap: spacing.xs,
   },
   empty: { gap: spacing.sm, paddingVertical: 32, alignItems: 'center' },
+  categoryTabsContainer: {
+    marginVertical: 4,
+  },
+  categoryScroll: {
+    gap: 8,
+    alignItems: 'center',
+    paddingVertical: 2,
+  },
+  categoryTab: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    gap: 6,
+  },
+  categoryTabText: {
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  categoryBadge: {
+    paddingHorizontal: 6,
+    paddingVertical: 1,
+    borderRadius: radius.pill,
+  },
+  categoryBadgeText: {
+    fontSize: 10,
+    fontWeight: '800',
+  },
+  newCategoryBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: radius.pill,
+    borderWidth: 1.5,
+    borderStyle: 'dashed',
+  },
+  newCategoryText: {
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.65)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: spacing.lg,
+  },
+  modalCard: {
+    width: '100%',
+    maxWidth: 380,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    padding: spacing.lg,
+    gap: spacing.md,
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+  },
+  modalSubtitle: {
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  modalInput: {
+    minHeight: 46,
+    borderWidth: 1,
+    borderRadius: radius.md,
+    paddingHorizontal: 12,
+    fontSize: 15,
+  },
+  modalActions: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    gap: spacing.sm,
+    marginTop: spacing.xs,
+  },
+  modalBtn: {
+    minWidth: 90,
+  },
 });

@@ -59,7 +59,6 @@ internal object TxtBookParser {
     var paragraphEnd = 0
     var blockCount = 0
     var sentenceCount = 0
-    val sentences = BreakIterator.getSentenceInstance(Locale.ROOT)
 
     fun addBlock(start: Int, end: Int, kind: String) {
       check()
@@ -67,26 +66,22 @@ internal object TxtBookParser {
       if (end - start > MAX_BLOCK_CHARACTERS) limit("A paragraph is too long. Add paragraph breaks and import the TXT file again.")
       val raw = text.substring(start, end)
       val anchor = "txt:utf16:$start-$end"
-      sentences.setText(raw)
+      val sentenceSpans = com.aireader.narration.TextNormalizer.splitSentences(raw)
       val parsedSentences = mutableListOf<ParsedSentence>()
-      var sentenceStart = sentences.first()
-      var sentenceEnd = sentences.next()
-      while (sentenceEnd != BreakIterator.DONE) {
+      for (span in sentenceSpans) {
         check()
-        val original = raw.substring(sentenceStart, sentenceEnd)
+        val original = span.text
         val nfc = Normalizer.normalize(original, Normalizer.Form.NFC)
           .replace(narrationWhitespace, " ").trim()
         val normalized = com.aireader.narration.TextNormalizer.fixLigatureSplits(nfc)
         if (normalized.isNotEmpty()) {
           if (++sentenceCount > MAX_SENTENCES) limit("This book has more than 100,000 sentences.")
-          val sentenceAnchor = "txt:utf16:${start + sentenceStart}-${start + sentenceEnd}"
+          val sentenceAnchor = "txt:utf16:${start + span.start}-${start + span.end}"
           parsedSentences.add(ParsedSentence(
             contentId(sourceIdentity, "sentence", sentenceAnchor, original), original,
             normalized, sentenceAnchor, textHash(normalized),
           ))
         }
-        sentenceStart = sentenceEnd
-        sentenceEnd = sentences.next()
       }
       blocks.add(ParsedBlock(contentId(sourceIdentity, kind, anchor, raw), kind, raw, anchor, textHash(raw), parsedSentences))
     }

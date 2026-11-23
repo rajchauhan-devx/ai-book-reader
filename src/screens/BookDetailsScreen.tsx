@@ -90,19 +90,19 @@ export function BookDetailsScreen() {
   return (
     <Screen contentStyle={styles.content}>
       <View style={styles.hero}>
-        <BookCover book={book} width={150} height={216} />
+        <BookCover book={book} width={160} height={232} />
         <Text style={[styles.title, { color: colors.ink }]}>{book.title}</Text>
         <Text style={[styles.author, { color: colors.inkMuted }]}>
           {book.author}
         </Text>
         <View style={styles.metaRow}>
           <View
-            style={[styles.metaPill, { backgroundColor: colors.surfaceMuted }]}
+            style={[styles.metaPill, { backgroundColor: colors.surfaceMuted, borderColor: colors.border }]}
           >
             {isImported ? (
-              <FileCheck2 size={15} color={colors.inkMuted} />
+              <FileCheck2 size={14} color={colors.inkMuted} />
             ) : (
-              <Clock3 size={15} color={colors.inkMuted} />
+              <Clock3 size={14} color={colors.inkMuted} />
             )}
             <Text style={[styles.metaText, { color: colors.inkMuted }]}>
               {isImported
@@ -111,12 +111,12 @@ export function BookDetailsScreen() {
             </Text>
           </View>
           <View
-            style={[styles.metaPill, { backgroundColor: colors.surfaceMuted }]}
+            style={[styles.metaPill, { backgroundColor: colors.surfaceMuted, borderColor: colors.border }]}
           >
             {isImported ? (
-              <ShieldCheck size={15} color={colors.inkMuted} />
+              <ShieldCheck size={14} color={colors.inkMuted} />
             ) : (
-              <ListMusic size={15} color={colors.inkMuted} />
+              <ListMusic size={14} color={colors.inkMuted} />
             )}
             <Text style={[styles.metaText, { color: colors.inkMuted }]}>
               {isImported ? book.format?.toUpperCase() : '9 chapters'}
@@ -243,20 +243,24 @@ export function BookDetailsScreen() {
 }
 
 const styles = StyleSheet.create({
-  content: { padding: spacing.lg, paddingBottom: spacing.xxl },
-  hero: { alignItems: 'center', paddingVertical: spacing.md },
+  content: { paddingHorizontal: spacing.lg, paddingTop: spacing.xs, paddingBottom: 80 },
+  hero: { alignItems: 'center', paddingTop: spacing.sm, paddingBottom: spacing.md },
   title: {
-    ...typography.pageTitle,
-    fontSize: 27,
+    fontSize: 22,
+    lineHeight: 28,
+    fontWeight: '700',
     textAlign: 'center',
-    marginTop: spacing.lg,
-  },
-  author: { ...typography.body, marginTop: 2 },
-  metaRow: { flexDirection: 'row', gap: spacing.xs, marginTop: spacing.md },
-  metaPill: {
-    height: 34,
+    marginTop: spacing.md,
     paddingHorizontal: spacing.sm,
+    letterSpacing: -0.3,
+  },
+  author: { fontSize: 15, fontWeight: '500', marginTop: 4, textAlign: 'center' },
+  metaRow: { flexDirection: 'row', gap: 8, marginTop: spacing.md },
+  metaPill: {
+    height: 32,
+    paddingHorizontal: 12,
     borderRadius: radius.pill,
+    borderWidth: 1,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,

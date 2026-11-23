@@ -36,9 +36,9 @@ export function MiniPlayer() {
 
   const containerThemedStyle = React.useMemo(
     () => ({
-      backgroundColor: isDark ? '#23201B' : '#FFFDF7',
+      backgroundColor: isDark ? '#1A1E26' : '#FFFFFF',
       borderColor: colors.border,
-      shadowColor: isDark ? '#000' : '#854D0E',
+      shadowColor: isDark ? '#000000' : '#D97706',
     }),
     [isDark, colors.border],
   );
@@ -162,16 +162,16 @@ const styles = StyleSheet.create({
   container: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: spacing.sm,
-    paddingVertical: spacing.xs,
-    borderRadius: radius.lg,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 8,
+    borderRadius: radius.md,
     marginHorizontal: spacing.sm,
-    marginBottom: spacing.xs,
+    marginBottom: 6,
     borderWidth: 1,
-    elevation: 4,
-    shadowOffset: { width: 0, height: -2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
+    elevation: 8,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
   },
   infoArea: {
     flex: 1,

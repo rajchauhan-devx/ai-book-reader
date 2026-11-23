@@ -12,16 +12,23 @@ import {
   bookLibraryService,
   type BookImportProgress,
 } from '../services/bookLibrary';
+import { categoriesService, DEFAULT_CATEGORY } from '../services/categories';
 import type { Book, BookSelection, ImportedBook } from '../types/library';
 
 type LibraryContextValue = {
   books: Book[];
+  categories: string[];
   loading: boolean;
   error: string | null;
   selectedBook: BookSelection | null;
   importProgress: BookImportProgress;
   refresh: () => Promise<void>;
-  chooseAndImportBook: () => Promise<ImportedBook | null>;
+  chooseAndImportBook: (targetCategory?: string) => Promise<ImportedBook | null>;
+  chooseBookSelection: () => Promise<BookSelection | null>;
+  importBookSelection: (
+    selection: BookSelection,
+    targetCategory?: string,
+  ) => Promise<ImportedBook | null>;
   cancelImport: () => Promise<void>;
   removeBook: (bookId: string) => Promise<void>;
   prepareBook: (bookId: string) => Promise<void>;
@@ -41,6 +48,9 @@ type LibraryContextValue = {
   ) => Promise<void>;
   markBookFinished: (bookId: string, finished: boolean) => Promise<void>;
   clearImportResult: () => void;
+  addCategory: (name: string) => Promise<string[]>;
+  deleteCategory: (name: string) => Promise<string[]>;
+  updateBookCategory: (bookId: string, category: string) => Promise<void>;
 };
 
 const initialProgress: BookImportProgress = {
@@ -66,6 +76,7 @@ function errorMessage(error: unknown): string {
 
 export function LibraryProvider({ children }: { children: React.ReactNode }) {
   const [books, setBooks] = useState<Book[]>([]);
+  const [categories, setCategories] = useState<string[]>([DEFAULT_CATEGORY]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedBook, setSelectedBook] = useState<BookSelection | null>(null);
@@ -75,6 +86,28 @@ export function LibraryProvider({ children }: { children: React.ReactNode }) {
   const revision = useRef(0);
   const refreshInFlight = useRef(false);
   const [active, setActive] = useState(AppState.currentState !== 'background');
+
+  useEffect(() => {
+    categoriesService.getCategories().then(stored => {
+      const bookGenres = books
+        .map(b => b.genre?.trim())
+        .filter((g): g is string => !!g && g !== 'Uncategorized' && g !== 'Default');
+      const unique = Array.from(new Set([...stored, ...bookGenres]));
+      setCategories(unique);
+    });
+  }, [books]);
+
+  const addCategory = useCallback(async (name: string) => {
+    const updated = await categoriesService.addCategory(name);
+    setCategories(updated);
+    return updated;
+  }, []);
+
+  const deleteCategory = useCallback(async (name: string) => {
+    const updated = await categoriesService.deleteCategory(name);
+    setCategories(updated);
+    return updated;
+  }, []);
 
   const refresh = useCallback(async () => {
     if (refreshInFlight.current) return;
@@ -127,10 +160,9 @@ export function LibraryProvider({ children }: { children: React.ReactNode }) {
     return () => clearInterval(timer);
   }, [active, preparing, refresh]);
 
-  const chooseAndImportBook = useCallback(async () => {
+  const chooseBookSelection = useCallback(async (): Promise<BookSelection | null> => {
     if (busy.current) return null;
     busy.current = true;
-    revision.current += 1;
     setError(null);
     setSelectedBook(null);
     setImportProgress({
@@ -149,40 +181,13 @@ export function LibraryProvider({ children }: { children: React.ReactNode }) {
         return null;
       }
       setSelectedBook(selection);
-      setImportProgress({
-        phase: 'copying',
-        progress: 0,
-        copiedBytes: 0,
-        totalBytes: selection.size,
-        message: 'Copying into private storage',
-      });
-      const importedBook = await bookLibraryService.importBook(selection.uri);
-      revision.current += 1;
-      setBooks(current => {
-        const withoutBook = current.filter(book => book.id !== importedBook.id);
-        return [importedBook, ...withoutBook];
-      });
-      setImportProgress({
-        phase: 'complete',
-        progress: 1,
-        copiedBytes: importedBook.sourceSizeBytes,
-        totalBytes: importedBook.sourceSizeBytes,
-        message: importedBook.duplicate
-          ? 'Already in your library'
-          : 'Added to your library',
-      });
-      return importedBook;
+      return selection;
     } catch (reason) {
       const message = errorMessage(reason);
-      const cancelled =
-        typeof reason === 'object' &&
-        reason !== null &&
-        'code' in reason &&
-        reason.code === 'BOOK_IMPORT_CANCELLED';
-      setError(cancelled ? null : message);
+      setError(message);
       setImportProgress({
         ...initialProgress,
-        phase: cancelled ? 'cancelled' : 'failed',
+        phase: 'failed',
         message,
       });
       return null;
@@ -190,6 +195,156 @@ export function LibraryProvider({ children }: { children: React.ReactNode }) {
       busy.current = false;
     }
   }, []);
+
+  const importBookSelection = useCallback(
+    async (
+      selection: BookSelection,
+      targetCategory?: string,
+    ): Promise<ImportedBook | null> => {
+      if (busy.current) return null;
+      busy.current = true;
+      revision.current += 1;
+      setError(null);
+      setSelectedBook(selection);
+      setImportProgress({
+        phase: 'copying',
+        progress: 0,
+        copiedBytes: 0,
+        totalBytes: selection.size,
+        message: 'Copying into private storage',
+      });
+      try {
+        const importedBook = await bookLibraryService.importBook(selection.uri);
+        if (targetCategory && targetCategory !== 'Default') {
+          try {
+            await bookLibraryService.updateBookMetadata(
+              importedBook.id,
+              importedBook.title,
+              importedBook.author,
+              targetCategory,
+              importedBook.coverChoice ?? -1,
+            );
+            importedBook.genre = targetCategory;
+          } catch {
+            // Keep default if update fails
+          }
+        }
+        revision.current += 1;
+        setBooks(current => {
+          const withoutBook = current.filter(book => book.id !== importedBook.id);
+          return [importedBook, ...withoutBook];
+        });
+        setImportProgress({
+          phase: 'complete',
+          progress: 1,
+          copiedBytes: importedBook.sourceSizeBytes,
+          totalBytes: importedBook.sourceSizeBytes,
+          message: importedBook.duplicate
+            ? 'Already in your library'
+            : 'Added to your library',
+        });
+        return importedBook;
+      } catch (reason) {
+        const message = errorMessage(reason);
+        const cancelled =
+          typeof reason === 'object' &&
+          reason !== null &&
+          'code' in reason &&
+          reason.code === 'BOOK_IMPORT_CANCELLED';
+        setError(cancelled ? null : message);
+        setImportProgress({
+          ...initialProgress,
+          phase: cancelled ? 'cancelled' : 'failed',
+          message,
+        });
+        return null;
+      } finally {
+        busy.current = false;
+      }
+    },
+    [],
+  );
+
+  const chooseAndImportBook = useCallback(
+    async (targetCategory?: string): Promise<ImportedBook | null> => {
+      if (busy.current) return null;
+      busy.current = true;
+      revision.current += 1;
+      setError(null);
+      setSelectedBook(null);
+      setImportProgress({
+        ...initialProgress,
+        phase: 'choosing',
+        message: 'Waiting for your selection',
+      });
+      try {
+        const selection = await bookLibraryService.chooseBook();
+        if (!selection) {
+          setImportProgress({
+            ...initialProgress,
+            phase: 'cancelled',
+            message: 'No file selected',
+          });
+          return null;
+        }
+        setSelectedBook(selection);
+        setImportProgress({
+          phase: 'copying',
+          progress: 0,
+          copiedBytes: 0,
+          totalBytes: selection.size,
+          message: 'Copying into private storage',
+        });
+        const importedBook = await bookLibraryService.importBook(selection.uri);
+        if (targetCategory && targetCategory !== 'Default') {
+          try {
+            await bookLibraryService.updateBookMetadata(
+              importedBook.id,
+              importedBook.title,
+              importedBook.author,
+              targetCategory,
+              importedBook.coverChoice ?? -1,
+            );
+            importedBook.genre = targetCategory;
+          } catch {
+            // Keep default if update fails
+          }
+        }
+        revision.current += 1;
+        setBooks(current => {
+          const withoutBook = current.filter(book => book.id !== importedBook.id);
+          return [importedBook, ...withoutBook];
+        });
+        setImportProgress({
+          phase: 'complete',
+          progress: 1,
+          copiedBytes: importedBook.sourceSizeBytes,
+          totalBytes: importedBook.sourceSizeBytes,
+          message: importedBook.duplicate
+            ? 'Already in your library'
+            : 'Added to your library',
+        });
+        return importedBook;
+      } catch (reason) {
+        const message = errorMessage(reason);
+        const cancelled =
+          typeof reason === 'object' &&
+          reason !== null &&
+          'code' in reason &&
+          reason.code === 'BOOK_IMPORT_CANCELLED';
+        setError(cancelled ? null : message);
+        setImportProgress({
+          ...initialProgress,
+          phase: cancelled ? 'cancelled' : 'failed',
+          message,
+        });
+        return null;
+      } finally {
+        busy.current = false;
+      }
+    },
+    [],
+  );
 
   const cancelImport = useCallback(async () => {
     if (!busy.current) return;
@@ -281,15 +436,34 @@ export function LibraryProvider({ children }: { children: React.ReactNode }) {
     [mutate],
   );
 
+  const updateBookCategory = useCallback(
+    async (bookId: string, category: string) => {
+      const target = books.find(b => b.id === bookId);
+      if (target) {
+        await updateBookMetadata(
+          bookId,
+          target.title,
+          target.author,
+          category,
+          target.coverChoice ?? -1,
+        );
+      }
+    },
+    [books, updateBookMetadata],
+  );
+
   const value = useMemo(
     () => ({
       books,
+      categories,
       loading,
       error,
       selectedBook,
       importProgress,
       refresh,
       chooseAndImportBook,
+      chooseBookSelection,
+      importBookSelection,
       cancelImport,
       removeBook,
       prepareBook,
@@ -299,11 +473,17 @@ export function LibraryProvider({ children }: { children: React.ReactNode }) {
       updateBookMetadata,
       savePreviewPosition,
       markBookFinished,
+      addCategory,
+      deleteCategory,
+      updateBookCategory,
     }),
     [
       books,
+      categories,
       cancelImport,
       chooseAndImportBook,
+      chooseBookSelection,
+      importBookSelection,
       clearImportResult,
       error,
       importProgress,
@@ -317,6 +497,9 @@ export function LibraryProvider({ children }: { children: React.ReactNode }) {
       updateBookMetadata,
       savePreviewPosition,
       markBookFinished,
+      addCategory,
+      deleteCategory,
+      updateBookCategory,
     ],
   );
 

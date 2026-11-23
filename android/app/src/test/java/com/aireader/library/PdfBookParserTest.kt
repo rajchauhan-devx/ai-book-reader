@@ -69,4 +69,17 @@ class PdfBookParserTest {
       paragraphs[0]
     )
   }
+
+  @Test
+  fun testWeldsParagraphsEndingInTitleOrAbbreviation() {
+    val raw = """
+      He had an appointment with Mr.
+
+      Raj at five in the evening.
+    """.trimIndent()
+
+    val paragraphs = PdfBookParser.cleanAndReconstructPdfParagraphs(raw)
+    assertEquals(1, paragraphs.size)
+    assertEquals("He had an appointment with Mr. Raj at five in the evening.", paragraphs[0])
+  }
 }
